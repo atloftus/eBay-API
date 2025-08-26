@@ -479,11 +479,11 @@ public class GoogleDriveService
 
 
     /// <summary>
-    /// Converts a 1-based column index to a column letter (e.g., 1 -> A).
+    /// Converts a 1-based column index to a column letter (e.g., 1 -> A, 2 -> B, ..., 27 -> AA).
     /// </summary>
     /// <param name="columnIndex1Based">Column index (1-based).</param>
     /// <returns>Column letter.</returns>
-    private static string ColumnIndexToLetter(int columnIndex1Based)
+    public static string ColumnIndexToLetter(int columnIndex1Based)
     {
         if (columnIndex1Based <= 0) throw new ArgumentOutOfRangeException(nameof(columnIndex1Based));
         var dividend = columnIndex1Based;
@@ -599,14 +599,43 @@ public class GoogleDriveService
     }
 
 
-    public async Task SetBasicFilterAsync(string sheetName, int headerRowIndex = 0)
+
+    public async Task<int> ClearFiltersAsync(string tabName)
     {
-        var sheetId = await GetSheetIdAsync(sheetName);
-        if (sheetId == null)
-            throw new InvalidOperationException($"Sheet '{sheetName}' not found.");
+        // Get spreadsheet metadata to list all sheets
+        var spreadsheet = await _sheetService.Spreadsheets.Get(_config.sheetid).ExecuteAsync();
+        var requests = new List<Request>();
+
+        var tabId = await GetSheetIdAsync(tabName);
+        if (tabId == null)
+            throw new InvalidOperationException($"Tab '{tabName}' not found.");
+
+        requests.Add(new Request
+        {
+            ClearBasicFilter = new ClearBasicFilterRequest
+            {
+                SheetId = tabId
+            }
+        });
+
+        var batchRequest = new BatchUpdateSpreadsheetRequest
+        {
+            Requests = requests
+        };
+
+        var response = await _sheetService.Spreadsheets.BatchUpdate(batchRequest, _config.sheetid).ExecuteAsync();
+        return requests.Count;
+    }
+
+
+    public async Task SetBasicFilterAsync(string tabName, int headerRowIndex = 0)
+    {
+        var tabId = await GetSheetIdAsync(tabName);
+        if (tabId == null)
+            throw new InvalidOperationException($"Tab '{tabName}' not found.");
 
         // Get header row to determine column indices
-        var get = _sheetService.Spreadsheets.Values.Get(_config.sheetid, $"{sheetName}!A1:Z1");
+        var get = _sheetService.Spreadsheets.Values.Get(_config.sheetid, $"{tabName}!A1:Z1");
         var resp = await get.ExecuteAsync().ConfigureAwait(false);
         var headers = resp.Values?.FirstOrDefault()?.Select(h => h?.ToString() ?? "").ToList();
         if (headers == null || headers.Count == 0)
@@ -618,7 +647,7 @@ public class GoogleDriveService
         int columnCount = headers.Count;
 
         // Get row count (including header)
-        var allRows = await GetAllRowsAsync<object>(sheetName, r => r).ConfigureAwait(false);
+        var allRows = await GetAllRowsAsync<object>(tabName, r => r).ConfigureAwait(false);
         int rowCount = allRows.Count + 1; // +1 for header
 
         // Central Time today as yyyy-MM-dd
@@ -683,13 +712,76 @@ public class GoogleDriveService
         {
             Range = new GridRange
             {
-                SheetId = sheetId.Value,
+                SheetId = tabId.Value,
                 StartRowIndex = headerRowIndex,
                 EndRowIndex = rowCount,
                 StartColumnIndex = 0,
                 EndColumnIndex = columnCount
             },
             FilterSpecs = filterSpecs.Count > 0 ? filterSpecs : null,
+            SortSpecs = sortSpecs.Count > 0 ? sortSpecs : null
+        };
+
+        var filterRequest = new Request
+        {
+            SetBasicFilter = new SetBasicFilterRequest
+            {
+                Filter = basicFilter
+            }
+        };
+
+        var batchRequest = new BatchUpdateSpreadsheetRequest
+        {
+            Requests = new List<Request> { filterRequest }
+        };
+
+        await _sheetService.Spreadsheets.BatchUpdate(batchRequest, _config.sheetid).ExecuteAsync();
+    }
+
+
+
+    public async Task SetBasicOrdersFilterAsync(string tabName, int headerRowIndex = 0)
+    {
+        var tabId = await GetSheetIdAsync(tabName);
+        if (tabId == null)
+            throw new InvalidOperationException($"Tab '{tabName}' not found.");
+
+        // Get header row to determine column indices
+        var get = _sheetService.Spreadsheets.Values.Get(_config.sheetid, $"{tabName}!A1:Z1");
+        var resp = await get.ExecuteAsync().ConfigureAwait(false);
+        var headers = resp.Values?.FirstOrDefault()?.Select(h => h?.ToString() ?? "").ToList();
+        if (headers == null || headers.Count == 0)
+            throw new InvalidOperationException("No header row found.");
+
+        // Find the "Created" column index
+        int createdCol = headers.FindIndex(h => h.Equals("Created", StringComparison.OrdinalIgnoreCase));
+        int columnCount = headers.Count;
+
+        // Get all data rows (excluding header)
+        var allRows = await GetAllRowsAsync<object>(tabName, r => r).ConfigureAwait(false);
+        int dataRowCount = allRows.Count;
+
+        // Build sortSpecs for "Created" descending
+        var sortSpecs = new List<SortSpec>();
+        if (createdCol >= 0)
+        {
+            sortSpecs.Add(new SortSpec
+            {
+                DimensionIndex = createdCol,
+                SortOrder = "DESCENDING"
+            });
+        }
+
+        var basicFilter = new BasicFilter
+        {
+            Range = new GridRange
+            {
+                SheetId = tabId.Value,
+                StartRowIndex = headerRowIndex,
+                EndRowIndex = dataRowCount + 1, // header + data
+                StartColumnIndex = 0,
+                EndColumnIndex = columnCount
+            },
             SortSpecs = sortSpecs.Count > 0 ? sortSpecs : null
         };
 
@@ -784,6 +876,55 @@ public class GoogleDriveService
         };
 
         await _sheetService.Spreadsheets.BatchUpdate(batchRequest, _config.sheetid).ExecuteAsync();
+    }
+
+
+
+    /// <summary>
+    /// Converts a specified range in a tab to a table with headers.
+    /// The method reads the range, infers headers if not present, and writes a new table with headers to a new tab named "{tabName}_Table".
+    /// </summary>
+    /// <param name="tabName">Source tab name.</param>
+    /// <param name="range">Range in A1 notation (e.g., "A2:D10").</param>
+    /// <returns>True if table created and written, false otherwise.</returns>
+    public async Task<bool> ConvertRangeToTableWithHeadersAsync(string tabName, string range)
+    {
+        if (string.IsNullOrWhiteSpace(tabName)) throw new ArgumentException("Tab name is required", nameof(tabName));
+        if (string.IsNullOrWhiteSpace(range)) throw new ArgumentException("Range is required", nameof(range));
+
+        var spreadsheetId = _config.sheetid;
+        var targetTabName = $"{tabName}_Table";
+
+        // Get the data from the specified range
+        var getRequest = _sheetService.Spreadsheets.Values.Get(spreadsheetId, $"{tabName}!{range}");
+        var getResponse = await getRequest.ExecuteAsync().ConfigureAwait(false);
+        var rows = getResponse.Values?.ToList() ?? new List<IList<object>>();
+        if (rows.Count == 0) return false;
+
+        // Try to get headers from the source tab (first row)
+        var headerRequest = _sheetService.Spreadsheets.Values.Get(spreadsheetId, $"{tabName}!A1:Z1");
+        var headerResponse = await headerRequest.ExecuteAsync().ConfigureAwait(false);
+        var headers = headerResponse.Values?.FirstOrDefault()?.Select(h => h?.ToString() ?? "").ToList();
+
+        // If headers are not found, generate generic headers
+        if (headers == null || headers.Count == 0)
+        {
+            int colCount = rows[0].Count;
+            headers = Enumerable.Range(1, colCount).Select(i => $"Column{i}").ToList();
+        }
+
+        // Create the target tab if it doesn't exist, and write headers
+        await CreateTabAsync(targetTabName, headers);
+
+        // Write the table (headers + data) to the target tab
+        var values = new List<IList<object>> { headers.Cast<object>().ToList() };
+        values.AddRange(rows);
+
+        var updateRequest = _sheetService.Spreadsheets.Values.Update(new ValueRange { Values = values }, spreadsheetId, $"{tabName}!A1");
+        updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+        await updateRequest.ExecuteAsync();
+
+        return true;
     }
     #endregion
 }

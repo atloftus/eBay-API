@@ -126,7 +126,6 @@ public static class AuctionItemUtil
             BidCount = row[3]?.ToString() ?? "0",
             EndDate = row[4]?.ToString(),
             EndTime = row[5]?.ToString(),
-            Numbered = row[6]?.ToString(),
             OutOf = row[7]?.ToString(),
             Rookie = row[8]?.ToString(),
             ItemWebUrl = row[9]?.ToString()
@@ -161,7 +160,7 @@ public static class AuctionItemUtil
     {
         if (string.IsNullOrEmpty(title)) return "0";
         var psaMatch = Regex.Match(title, @"PSA (\d{1,2})");
-        return psaMatch.Success ? psaMatch.Groups[1].Value : "";
+        return psaMatch.Success ? psaMatch.Groups[1].Value : "0";
     }
 
     public static string ParseRC(string title)

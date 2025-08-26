@@ -692,5 +692,57 @@ $@"<?xml version=""1.0"" encoding=""utf8""?>
             static string Csv(string? s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
         }
         #endregion
+
+
+        /// <summary>
+        /// Retrieves active bids for the logged-in user.
+        /// </summary>
+        /// <returns>List of ItemSummary objects representing active bids.</returns>
+        public async Task<List<ItemSummary>> GetActiveBidsAsync()
+        {
+            var results = new List<ItemSummary>();
+            var tradingEndpoint = IsSandbox ? "https://api.sandbox.ebay.com/ws/api.dll" : "https://api.ebay.com/ws/api.dll";
+            var siteId = MarketplaceToSiteId(_config.MarketplaceId);
+
+            var reqXml =
+$@"<?xml version=""1.0"" encoding=""utf8""?>
+<GetBidderListRequest xmlns=""urn:ebay:apis:eBLBaseComponents"">
+  <ActiveItemsOnly>true</ActiveItemsOnly>
+  <UserID>{_config.ClientId}</UserID>
+  <GranularityLevel>Fine</GranularityLevel>
+</GetBidderListRequest>";
+
+            using var http = new HttpClient();
+            var msg = new HttpRequestMessage(HttpMethod.Post, tradingEndpoint)
+            { Content = new StringContent(reqXml, Encoding.UTF8, "text/xml") };
+
+            msg.Headers.Add("X-EBAY-API-COMPATIBILITY-LEVEL", "1207");
+            msg.Headers.Add("X-EBAY-API-DEV-NAME", _config.ClientId);
+            msg.Headers.Add("X-EBAY-API-APP-NAME", _config.ClientId);
+            msg.Headers.Add("X-EBAY-API-CERT-NAME", _config.ClientSecret);
+            msg.Headers.Add("X-EBAY-API-CALL-NAME", "GetBidderList");
+            msg.Headers.Add("X-EBAY-API-SITEID", siteId);
+            msg.Headers.Add("X-EBAY-API-IAF-TOKEN", await GetAccessTokenAsync());
+
+            using var resp = await http.SendAsync(msg);
+            var xml = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+                throw new ApplicationException($"GetBidderList failed ({(int)resp.StatusCode} {resp.StatusCode}): {xml}");
+
+            var doc = XDocument.Parse(xml);
+            XNamespace ns = "urn:ebay:apis:eBLBaseComponents";
+            foreach (var item in doc.Descendants(ns + "Item"))
+            {
+                // Map XML fields to ItemSummary as needed
+                results.Add(new ItemSummary
+                {
+                    ItemId = item.Element(ns + "ItemID")?.Value,
+                    Title = item.Element(ns + "Title")?.Value,
+                    // Add other fields as needed
+                });
+            }
+
+            return results;
+        }
     }
 }

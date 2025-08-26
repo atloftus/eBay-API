@@ -62,8 +62,8 @@ namespace eBay_API.Controllers
         /// 200 OK with <see cref="BuyResponse"/> containing processed run results,
         /// or Problem response if an error occurs.
         /// </returns>
-        [HttpPost("WriteActiveItemsToTable")]
-        public async Task<IActionResult> WriteActiveItemsToTable()
+        [HttpPost("WriteActiveAuctionsToTable")]
+        public async Task<IActionResult> WriteActiveAuctionsToTable()
         {
             var centralZone = DateTimeUtil.FindCentralTimeZone();
             var results = new List<RunResult>();
@@ -103,7 +103,7 @@ namespace eBay_API.Controllers
                             ai => ai.ToRow(),
                             combinedItems.First().GetHeaderRow()
                         );
-                        await _sheetService.SetBasicFilterAsync(tabName);
+                        // Get this call working again: await _sheetService.SetBasicFilterAsync(tabName);
                     }
                     catch (Exception ex)
                     {
@@ -141,15 +141,16 @@ namespace eBay_API.Controllers
             }
         }
 
-        //TODO: Come up with other useful filtering methods for the Google Sheet.
-        //TODO: Add input param that corresponds to sorting method and have it default to what it is now.
+
+        //IDEAS:
+        //TODO: Come up with other useful filtering methods for the Google Sheet (and make it an input param if you do)
         //TODO: Add tracking for when I lose/win auactions and track what days I do best
-        //TODO: Think about other queries that I can add
         //TODO: Add a way to filter by category so i dont get any baseball, hockey, marvel, mma, ufc, or soccer cards
         //TODO: Figure out how to publish to the web and get/return the publish URL
+        //TODO: Create a method that can download a photo based on a url
         //TODO: Think about expanding to COMC ($15 max shipping)..... or PSA ($6 base + $1 for each additional item).... or 4 sharp corners ($5 base + $1 for each additional item)
-        //TODO: Add numbered and PSA and RC to orders list
-
+        //TODO: Figure out how to get a list of all your active bids (maybe hide the ones that have gotten too expensive)
+        //TODO: Make functionality that lets me frequently update a sheet that shows me cards numbered to 50 or less that are ending today and still under $2... I need to get better at sniping low numbered cards for less than 2
 
 
         /// <summary>
@@ -161,13 +162,61 @@ namespace eBay_API.Controllers
         {
             try
             {
-                await _sheetService.SetBasicFilterAsync("SNIPING");
+                //TODO: add logic to go and get all of my current bids and write them to the BIDS tab
                 return Ok("Basic filter applied to PC tab.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to set basic filter for PC tab.");
                 return Problem("Failed to set basic filter for PC tab.");
+            }
+        }
+
+
+        /// <summary>
+        /// Fetches and writes active bids to the "BIDS" tab in the Google Sheet.
+        /// </summary>
+        /// <remarks>
+        /// - Retrieves active bids from eBay.
+        /// - Transforms bid data into AuctionItem models.
+        /// - Creates or updates the "BIDS" tab in the Google Sheet.
+        /// - Writes the active bid items to the sheet, replacing any existing rows.
+        /// - Returns the count of written items or an error response if the operation fails.
+        /// </remarks>
+        /// <returns>
+        /// 200 OK with the count of active bids written,
+        /// or Problem response if an error occurs.
+        /// </returns>
+        [HttpPost("WriteMyActiveBidsToTable")]
+        public async Task<IActionResult> WriteMyActiveBidsToTable()
+        {
+            try
+            {
+                var centralZone = DateTimeUtil.FindCentralTimeZone();
+                var activeBids = await _ebayService.GetActiveBidsAsync();
+
+                var auctionItems = activeBids
+                    .Select(item => AuctionItem.FromItemSummary(item, centralZone))
+                    .ToList();
+
+                if (auctionItems.Count > 0)
+                {
+                    await _sheetService.CreateTabAsync("BIDS", auctionItems.First().GetHeaderRow());
+                    await _sheetService.DeleteAllRowsExceptHeaderAsync("BIDS");
+                    await _sheetService.WriteItemsAsync(
+                        auctionItems,
+                        "BIDS",
+                        ai => ai.ToRow(),
+                        auctionItems.First().GetHeaderRow()
+                    );
+                }
+
+                return Ok($"Wrote {auctionItems.Count} active bids to BIDS tab.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to write active bids to BIDS tab.");
+                return Problem("Failed to write active bids to BIDS tab.");
             }
         }
         #endregion

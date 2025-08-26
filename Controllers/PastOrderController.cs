@@ -54,32 +54,37 @@ namespace eBay_API.Controllers
         [HttpPost("WriteOrderItemsToTable")]
         public async Task<IActionResult> WriteOrderItemsToTable()
         {
+            string tabName = "ORDERS";
             var centralZone = DateTimeUtil.FindCentralTimeZone();
             var purchases = await _ebayService.GetBuyerLineItemsAsync(30);
             var orderItems = purchases.Select(OrderItem.FromLineItem).ToList();
 
             //Make sure that the tab exists
-            await _sheetService.CreateTabAsync("ORDERS", orderItems.First().GetHeaderRow());
+            await _sheetService.CreateTabAsync(tabName, orderItems.First().GetHeaderRow());
 
             // Get all current rows in the ORDERS TAB
             var existingOrderItems = await _sheetService.GetAllRowsAsync<OrderItem>(
-                "ORDERS",
+                tabName,
                 row => OrderItemUtil.ToOrderItem(row)
                 );
 
-            // Combine with existing rows, removing duplicates by ItemId
             var combinedOrderItems = existingOrderItems.Concat(orderItems).ToList();
             var allOrderItems = combinedOrderItems
                 .GroupBy(oi => oi.ItemId)
                 .Select(g => g.First())
                 .ToList();
 
+            await _sheetService.CreateTabAsync(tabName, allOrderItems.First().GetHeaderRow());
+            await _sheetService.ClearFiltersAsync(tabName);
+            await _sheetService.DeleteAllRowsExceptHeaderAsync(tabName);
             await _sheetService.WriteItemsAsync(
                 allOrderItems,
-                "ORDERS",
-                oi => oi.ToRow(),
-                allOrderItems.FirstOrDefault()?.GetHeaderRow() ?? new List<string>()
+                tabName,
+                ai => ai.ToRow(),
+                allOrderItems.First().GetHeaderRow()
             );
+
+            await _sheetService.SetBasicOrdersFilterAsync(tabName);
 
             return Ok(new { items = orderItems.Count });
         }
