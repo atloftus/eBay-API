@@ -15,7 +15,6 @@ namespace eBay_API.Controllers
     public class AuctionController : ControllerBase
     {
         #region PROPERTIES
-        
         private readonly ILogger<AuctionController> _logger;
         private readonly Config _config;
         private readonly EbayService _ebayService;
@@ -62,30 +61,34 @@ namespace eBay_API.Controllers
         /// 200 OK with <see cref="BuyResponse"/> containing processed run results,
         /// or Problem response if an error occurs.
         /// </returns>
-        [HttpPost("WriteActiveItemsToTable")]
-        public async Task<IActionResult> WriteActiveItemsToTable()
+        [HttpPost("WriteActiveAuctionsToTable")]
+        public async Task<IActionResult> WriteActiveAuctionsToTable()
         {
             var centralZone = DateTimeUtil.FindCentralTimeZone();
             var results = new List<RunResult>();
 
-            // Iterate over each seller first
             foreach (var seller in _config.config.sellers)
             {
                 _logger.LogInformation("Processing seller: {Seller}", seller);
 
-                foreach (var run in _config.config.runs)
+                List<RunConfig> runs = _config.config.runs.ToList();
+                var caseHits = await _sheetService.GetAllRowsAsync<CaseHit>("CASE HITS", CaseHitUtil.ToCaseHit);
+                var caseHitQueries = caseHits
+                    .Select(q => $"{q.Sport} {q.Name} {q.Set}".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList();
+                runs.Add(new RunConfig() { sheet = "CASE HITS", queries = caseHitQueries.ToArray() });
+
+                foreach (var run in runs)
                 {
                     _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
 
                     var tabName = $"{run.sheet} - {seller}";
 
-                    // Inject sellers:{seller} into each query
-                    var sellerQueries = run.queries.Select(q => InjectSeller(q, seller)).ToList();
+                    var sellerQueries = run.queries.Select(q => QueryUtil.InjectSeller(q, seller)).ToList();
 
-                    // Fetch new items from eBay using the seller-specific queries
                     var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
 
-                    // Read all existing items from the Google Sheet tab.
                     List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync(tabName, AuctionItemUtil.ToAuctionItem);
 
                     var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
@@ -103,7 +106,6 @@ namespace eBay_API.Controllers
                             ai => ai.ToRow(),
                             combinedItems.First().GetHeaderRow()
                         );
-                        await _sheetService.SetBasicFilterAsync(tabName);
                     }
                     catch (Exception ex)
                     {
@@ -117,59 +119,13 @@ namespace eBay_API.Controllers
 
             return Ok(results);
         }
-
-
-
-        private static string InjectSeller(string query, string seller)
-        {
-            int filterIndex = query.IndexOf("filter=");
-            if (filterIndex >= 0)
-            {
-                int insertIndex = query.IndexOf(',', filterIndex);
-                if (insertIndex >= 0)
-                {
-                    return query.Insert(insertIndex, $",sellers:{{{seller}}}");
-                }
-                else
-                {
-                    return query + $",sellers:{{{seller}}}";
-                }
-            }
-            else
-            {
-                return query + $",sellers:{{{seller}}}";
-            }
-        }
-
-        //TODO: Come up with other useful filtering methods for the Google Sheet.
-        //TODO: Add input param that corresponds to sorting method and have it default to what it is now.
-        //TODO: Add tracking for when I lose/win auactions and track what days I do best
-        //TODO: Think about other queries that I can add
-        //TODO: Add a way to filter by category so i dont get any baseball, hockey, marvel, mma, ufc, or soccer cards
-        //TODO: Figure out how to publish to the web and get/return the publish URL
-        //TODO: Think about expanding to COMC ($15 max shipping)..... or PSA ($6 base + $1 for each additional item).... or 4 sharp corners ($5 base + $1 for each additional item)
-        //TODO: Add numbered and PSA and RC to orders list
-
-
-
-        /// <summary>
-        /// Test endpoint: applies the basic filter to the "PC" tab in the Google Sheet.
-        /// </summary>
-        /// <returns>200 OK if successful, or Problem if an error occurs.</returns>
-        [HttpPost("Test")]
-        public async Task<IActionResult> TEST()
-        {
-            try
-            {
-                await _sheetService.SetBasicFilterAsync("SNIPING");
-                return Ok("Basic filter applied to PC tab.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to set basic filter for PC tab.");
-                return Problem("Failed to set basic filter for PC tab.");
-            }
-        }
         #endregion
     }
 }
+
+
+
+//IDEAS:
+//TODO: Come up with other useful filtering methods for the Google Sheet (and make it an input param if you do)
+//TODO: Add a way to filter by category so i dont get any baseball, hockey, marvel, mma, ufc, or soccer cards
+//TODO: Create a method that can download a photo based on a url

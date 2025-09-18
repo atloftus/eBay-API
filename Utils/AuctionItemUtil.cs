@@ -101,6 +101,12 @@ public static class AuctionItemUtil
             })
             .ToList();
 
+
+        // Remove all items that have a bid count higher than 0
+        allAuctionItems = allAuctionItems
+            .Where(item => int.TryParse(item.BidCount, out var bc) ? bc == 0 : true)
+            .ToList();
+
         return allAuctionItems;
     }
 
@@ -126,7 +132,6 @@ public static class AuctionItemUtil
             BidCount = row[3]?.ToString() ?? "0",
             EndDate = row[4]?.ToString(),
             EndTime = row[5]?.ToString(),
-            Numbered = row[6]?.ToString(),
             OutOf = row[7]?.ToString(),
             Rookie = row[8]?.ToString(),
             ItemWebUrl = row[9]?.ToString()
@@ -137,8 +142,6 @@ public static class AuctionItemUtil
     public static string ParseTitle(string title) =>
     title?.Replace("\"", "\"\"") ?? "";
 
-    public static bool ParseIsNumbered(string title) =>
-        !string.IsNullOrEmpty(title) && title.Contains("/");
 
     public static int ParseOutOf(string title)
     {
@@ -157,18 +160,27 @@ public static class AuctionItemUtil
         return 999999;
     }
 
+
     public static string ParsePSA(string title)
     {
         if (string.IsNullOrEmpty(title)) return "0";
         var psaMatch = Regex.Match(title, @"PSA (\d{1,2})");
-        return psaMatch.Success ? psaMatch.Groups[1].Value : "";
+        return psaMatch.Success ? psaMatch.Groups[1].Value : "0";
     }
+
 
     public static string ParseRC(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "No";
         var lower = title.ToLowerInvariant();
         return (lower.Contains(" rc ") || lower.Contains(" rookie ")) ? "Yes" : "No";
+    }
+
+
+    public static string ParseCaseHits(string title)
+    {
+        //TODO: Implement this logic by checking to see if the title contains any of the case hit tittles in the list
+        return "No";
     }
 
 
