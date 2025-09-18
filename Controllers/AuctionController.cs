@@ -68,10 +68,78 @@ namespace eBay_API.Controllers
             var centralZone = DateTimeUtil.FindCentralTimeZone();
             var results = new List<RunResult>();
 
-            // Iterate over each seller first
+
+
+
+
+
+
+
+            // --- CASE HIT TAB LOGIC ---
+            var caseHitQueries = await _sheetService.GetAllRowsAsync<CaseHit>("CASE HITS", AuctionItemUtil.ToCaseHit);
+
+            foreach (var seller in _config.config.sellers)
+            {
+                _logger.LogInformation("Processing CASE HIT for seller: {Seller}", seller);
+
+                var tabName = $"CASE HITS - {seller}";
+
+                var sellerQueries = caseHitQueries
+                    .Select(q => $"{q.Sport} {q.Name} {q.Set}".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => InjectSeller(query, seller))
+                    .ToList();
+
+                var caseHits = await _ebayService.FetchItemsAsync(sellerQueries);
+
+                try
+                {
+                    if (caseHits.Count > 0)
+                    {
+                        // Use the same header as AuctionItem
+                        var headerRow = AuctionItem.FromItemSummary(caseHits.First(), centralZone).GetHeaderRow();
+                        await _sheetService.CreateTabAsync(tabName, headerRow);
+                        await _sheetService.ClearAllFiltersAsync();
+                        await _sheetService.DeleteAllRowsExceptHeaderAsync(tabName);
+                        await _sheetService.WriteItemsAsync(
+                            caseHits.Select(item => AuctionItem.FromItemSummary(item, centralZone)).ToList(),
+                            tabName,
+                            ai => ai.ToRow(),
+                            headerRow
+                        );
+                    }
+                    results.Add(new RunResult(tabName, caseHits.Count));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to persist CASE HIT items for seller {Seller}", seller);
+                    return Problem($"Failed to persist CASE HIT items for seller '{seller}'.");
+                }
+            }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            // --- EXISTING LOGIC FOR OTHER RUNS ---
             foreach (var seller in _config.config.sellers)
             {
                 _logger.LogInformation("Processing seller: {Seller}", seller);
+
+
 
                 foreach (var run in _config.config.runs)
                 {
@@ -79,13 +147,10 @@ namespace eBay_API.Controllers
 
                     var tabName = $"{run.sheet} - {seller}";
 
-                    // Inject sellers:{seller} into each query
                     var sellerQueries = run.queries.Select(q => InjectSeller(q, seller)).ToList();
 
-                    // Fetch new items from eBay using the seller-specific queries
                     var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
 
-                    // Read all existing items from the Google Sheet tab.
                     List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync(tabName, AuctionItemUtil.ToAuctionItem);
 
                     var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
@@ -103,7 +168,6 @@ namespace eBay_API.Controllers
                             ai => ai.ToRow(),
                             combinedItems.First().GetHeaderRow()
                         );
-                        // Get this call working again: await _sheetService.SetBasicFilterAsync(tabName);
                     }
                     catch (Exception ex)
                     {
@@ -114,6 +178,10 @@ namespace eBay_API.Controllers
                     results.Add(new RunResult(tabName, combinedItems.Count));
                 }
             }
+
+
+
+
 
             return Ok(results);
         }

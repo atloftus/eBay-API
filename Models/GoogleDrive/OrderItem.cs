@@ -42,15 +42,24 @@ namespace eBay_API.Models.GoogleDrive
         }
 
         [ColumnOrder(6)]
-        public string Price { get; set; }
+        public string CaseHit
+        {
+            get
+            {
+                return AuctionItemUtil.ParsePSA(Title).ToString();
+            }
+        }
 
         [ColumnOrder(7)]
-        public string TaxAmount { get; set; }
+        public string Price { get; set; }
 
         [ColumnOrder(8)]
-        public string ShippingAmount { get; set; }
+        public string TaxAmount { get; set; }
 
         [ColumnOrder(9)]
+        public string ShippingAmount { get; set; }
+
+        [ColumnOrder(10)]
         public string TotalAmount
         {
             get
@@ -62,10 +71,10 @@ namespace eBay_API.Models.GoogleDrive
             }
         }
 
-        [ColumnOrder(10)]
+        [ColumnOrder(11)]
         public string ItemId { get; set; }
 
-        [ColumnOrder(11)]
+        [ColumnOrder(12)]
         public string ItemLink
         {
             get

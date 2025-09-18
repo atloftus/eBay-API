@@ -69,9 +69,26 @@ namespace eBay_API.Controllers
                 );
 
             var combinedOrderItems = existingOrderItems.Concat(orderItems).ToList();
+
+            //Remove duplicates based on ItemId, keeping the one with a shipping cost value
+            //If both have or both don't have, keep the most recent one
             var allOrderItems = combinedOrderItems
                 .GroupBy(oi => oi.ItemId)
-                .Select(g => g.First())
+                .Select(g =>
+                {
+                    // Prefer items with a shipping cost value
+                    var withShipping = g.Where(x => !string.IsNullOrWhiteSpace(x.ShippingAmount) && x.ShippingAmount != "0" && x.ShippingAmount != "0.00");
+                    IEnumerable<OrderItem> candidates = withShipping.Any() ? withShipping : g;
+
+                    // Parse Created as DateTime, fallback to DateTime.MinValue if invalid
+                    return candidates
+                        .OrderByDescending(x =>
+                        {
+                            DateTime dt;
+                            return DateTime.TryParse(x.Created, out dt) ? dt : DateTime.MinValue;
+                        })
+                        .First();
+                })
                 .ToList();
 
             await _sheetService.CreateTabAsync(tabName, allOrderItems.First().GetHeaderRow());

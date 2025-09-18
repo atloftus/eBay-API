@@ -101,6 +101,12 @@ public static class AuctionItemUtil
             })
             .ToList();
 
+
+        // Remove all items that have a bid count higher than 0
+        allAuctionItems = allAuctionItems
+            .Where(item => int.TryParse(item.BidCount, out var bc) ? bc == 0 : true)
+            .ToList();
+
         return allAuctionItems;
     }
 
@@ -129,6 +135,23 @@ public static class AuctionItemUtil
             OutOf = row[7]?.ToString(),
             Rookie = row[8]?.ToString(),
             ItemWebUrl = row[9]?.ToString()
+        };
+    }
+
+
+
+    public static CaseHit? ToCaseHit(IList<object> row)
+    {
+        if (row == null || row.Count < 6) return null;
+
+        return new CaseHit
+        {
+            Sport = row[0]?.ToString(),
+            Name = row[1]?.ToString(),
+            Set = row[2]?.ToString(),
+            Years = row[3]?.ToString() ?? "0",
+            Type = row[4]?.ToString(),
+            Value = Int32.Parse(row[5]?.ToString())
         };
     }
 
@@ -168,6 +191,13 @@ public static class AuctionItemUtil
         if (string.IsNullOrWhiteSpace(title)) return "No";
         var lower = title.ToLowerInvariant();
         return (lower.Contains(" rc ") || lower.Contains(" rookie ")) ? "Yes" : "No";
+    }
+
+
+    public static string ParseCaseHits(string title)
+    {
+        //TODO: Implement this logic by checking to see if the title contains any of the case hit tittles in the list
+        return "No";
     }
 
 
