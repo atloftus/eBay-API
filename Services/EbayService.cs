@@ -1,14 +1,14 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using eBay_API.Models.Config;
 using eBay_API.Models.eBay.Response;
+
+
 
 namespace eBay_API.Services
 {
@@ -237,46 +237,6 @@ $@"<?xml version=""1.0"" encoding=""utf8""?>
 
 
         /// <summary>
-        /// Inspects an offer by its offer ID and returns details.
-        /// </summary>
-        /// <param name="offerId">Offer ID to inspect.</param>
-        /// <returns>OfferInspect object with details.</returns>
-        public async Task<OfferInspect> InspectOfferAsync(string offerId)
-        {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await GetAccessTokenAsync());
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-            var url = $"{SellBase}/sell/inventory/v1/offer/{offerId}";
-            var json = await http.GetStringAsync(url);
-
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            return new OfferInspect(
-                S(root, "sku"),
-                S(root, "status"),
-                S(root, "categoryId"),
-                S(root, "marketplaceId"),
-                Try(() =>
-                {
-                    var ps = root.GetProperty("pricingSummary");
-                    var pr = ps.GetProperty("price");
-                    return pr.GetProperty("value").GetString() ?? "(n/a)";
-                }, "(n/a)")
-            );
-
-            static string S(JsonElement el, string name) =>
-                el.TryGetProperty(name, out var v) ? (v.GetString() ?? "(n/a)") : "(n/a)";
-
-            static T Try<T>(Func<T> f, T fallback)
-            {
-                try { return f(); } catch { return fallback; }
-            }
-        }
-
-
-        /// <summary>
         /// Publishes an offer by its offer ID.
         /// </summary>
         /// <param name="offerId">Offer ID to publish.</param>
@@ -292,206 +252,6 @@ $@"<?xml version=""1.0"" encoding=""utf8""?>
 
             if (!resp.IsSuccessStatusCode)
                 throw new ApplicationException($"Publish failed for {offerId}: {(int)resp.StatusCode} {resp.StatusCode}  {text}");
-        }
-
-
-        /// <summary>
-        /// Lists all offers for the account, paginating through results.
-        /// </summary>
-        /// <param name="pageLimit">Maximum number of offers per page.</param>
-        /// <returns>List of OfferInfo objects.</returns>
-        public async Task<List<OfferInfo>> ListAllOffersAsync(int pageLimit = 200)
-        {
-            var result = new List<OfferInfo>();
-            var ub = new UriBuilder($"{SellBase}/sell/inventory/v1/offer");
-            var q = System.Web.HttpUtility.ParseQueryString(string.Empty);
-            q["limit"] = pageLimit.ToString(CultureInfo.InvariantCulture);
-            q["offset"] = "0";
-            ub.Query = q.ToString()!;
-            var url = ub.Uri.ToString();
-
-            using var http = NewClient(await GetAccessTokenAsync(), _config.MarketplaceId, _config.Locale);
-
-            while (true)
-            {
-                using var resp = await http.GetAsync(url);
-                var json = await resp.Content.ReadAsStringAsync();
-                if (!resp.IsSuccessStatusCode)
-                    throw new ApplicationException($"List offers failed ({(int)resp.StatusCode} {resp.StatusCode}): {json}");
-
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                if (root.TryGetProperty("offers", out var arr) && arr.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var o in arr.EnumerateArray())
-                    {
-                        result.Add(new OfferInfo(
-                            OfferId: o.TryGetProperty("offerId", out var idEl) ? idEl.GetString() : null,
-                            Sku: o.TryGetProperty("sku", out var skuEl) ? skuEl.GetString() : null,
-                            Status: o.TryGetProperty("status", out var stEl) ? stEl.GetString() : null,
-                            MarketplaceId: o.TryGetProperty("marketplaceId", out var mkEl) ? mkEl.GetString() : null
-                        ));
-                    }
-                }
-
-                if (root.TryGetProperty("next", out var nextEl) &&
-                    nextEl.ValueKind == JsonValueKind.String &&
-                    !string.IsNullOrWhiteSpace(nextEl.GetString()))
-                {
-                    url = nextEl.GetString()!;
-                    continue;
-                }
-
-                break;
-            }
-
-            return result;
-        }
-
-
-        /// <summary>
-        /// Lists offers using inventory fallback if the main API fails.
-        /// </summary>
-        /// <param name="pageLimit">Maximum number of items per page.</param>
-        /// <returns>List of OfferInfo objects.</returns>
-        public async Task<List<OfferInfo>> ListOffersViaInventoryFallbackAsync(int pageLimit = 200)
-        {
-            var offers = new List<OfferInfo>();
-            var skuRe = new Regex(@"^[AZaz09]{1,50}$", RegexOptions.Compiled);
-
-            var invUrl = $"{SellBase}/sell/inventory/v1/inventory_item?limit={pageLimit}&offset=0";
-            using var http = NewClient(await GetAccessTokenAsync(), _config.MarketplaceId, _config.Locale);
-
-            while (true)
-            {
-                using var resp = await http.GetAsync(invUrl);
-                var json = await resp.Content.ReadAsStringAsync();
-                if (!resp.IsSuccessStatusCode)
-                    throw new ApplicationException($"List inventory failed ({(int)resp.StatusCode} {resp.StatusCode}): {json}");
-
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("inventoryItems", out var items) && items.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in items.EnumerateArray())
-                    {
-                        var sku = item.TryGetProperty("sku", out var skuEl) ? skuEl.GetString() : null;
-                        if (string.IsNullOrWhiteSpace(sku) || !skuRe.IsMatch(sku!))
-                            continue;
-
-                        var url = $"{SellBase}/sell/inventory/v1/offer?sku={Uri.EscapeDataString(sku!)}";
-                        using var oresp = await http.GetAsync(url);
-                        var ojson = await oresp.Content.ReadAsStringAsync();
-                        if (!oresp.IsSuccessStatusCode) continue;
-
-                        using var odoc = JsonDocument.Parse(ojson);
-                        if (odoc.RootElement.TryGetProperty("offers", out var arr) && arr.ValueKind == JsonValueKind.Array)
-                        {
-                            foreach (var o in arr.EnumerateArray())
-                            {
-                                offers.Add(new OfferInfo(
-                                    OfferId: o.TryGetProperty("offerId", out var idEl) ? idEl.GetString() : null,
-                                    Sku: sku,
-                                    Status: o.TryGetProperty("status", out var stEl) ? stEl.GetString() : null,
-                                    MarketplaceId: o.TryGetProperty("marketplaceId", out var mkEl) ? mkEl.GetString() : null
-                                ));
-                            }
-                        }
-                    }
-                }
-
-                if (doc.RootElement.TryGetProperty("next", out var nextEl) &&
-                    nextEl.ValueKind == JsonValueKind.String &&
-                    !string.IsNullOrWhiteSpace(nextEl.GetString()))
-                {
-                    invUrl = nextEl.GetString()!;
-                    continue;
-                }
-
-                break;
-            }
-
-            return offers;
-        }
-
-
-        /// <summary>
-        /// Deletes an offer by its offer ID.
-        /// </summary>
-        /// <param name="offerId">Offer ID to delete.</param>
-        /// <returns>True if successful, otherwise throws exception.</returns>
-        public async Task<bool> DeleteOfferAsync(string offerId)
-        {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await GetAccessTokenAsync());
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-            var url = $"{SellBase}/sell/inventory/v1/offer/{offerId}";
-            using var resp = await http.DeleteAsync(url);
-            if ((int)resp.StatusCode is >= 200 and < 300) return true;
-
-            var text = await resp.Content.ReadAsStringAsync();
-            throw new ApplicationException($"Delete failed for {offerId}: {(int)resp.StatusCode} {resp.StatusCode}  {text}");
-        }
-
-
-        /// <summary>
-        /// Purges draft offers, optionally filtering by SKU prefix and supporting dry run.
-        /// </summary>
-        /// <param name="skuPrefix">Optional SKU prefix to filter offers.</param>
-        /// <param name="dryRun">If true, only simulates deletion.</param>
-        /// <param name="confirm">If true, actually deletes offers.</param>
-        /// <returns>PurgeDraftOffersResult with details of the operation.</returns>
-        public async Task<PurgeDraftOffersResult> PurgeDraftOffersAsync(string? skuPrefix = null, bool dryRun = true, bool confirm = false)
-        {
-            List<OfferInfo> offers;
-            try
-            {
-                offers = await ListAllOffersAsync();
-            }
-            catch
-            {
-                offers = await ListOffersViaInventoryFallbackAsync();
-            }
-
-            var toDelete = offers
-                .Where(o =>
-                    string.Equals(o.MarketplaceId ?? "", _config.MarketplaceId, StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(o.Status ?? "", "PUBLISHED", StringComparison.OrdinalIgnoreCase) &&
-                    (string.IsNullOrWhiteSpace(skuPrefix) ||
-                     (!string.IsNullOrWhiteSpace(o.Sku) && o.Sku!.StartsWith(skuPrefix, StringComparison.OrdinalIgnoreCase))))
-                .ToList();
-
-            if (toDelete.Count == 0)
-                return new PurgeDraftOffersResult(offers.Count, 0, 0, toDelete, deleted: new());
-
-            if (dryRun || !confirm)
-                return new PurgeDraftOffersResult(offers.Count, toDelete.Count, 0, toDelete, deleted: new());
-
-            var deleted = new List<OfferInfo>();
-            var failures = 0;
-
-            foreach (var o in toDelete)
-            {
-                try
-                {
-                    if (o.OfferId is null) { failures++; continue; }
-                    await DeleteOfferAsync(o.OfferId);
-                    deleted.Add(o);
-                }
-                catch
-                {
-                    failures++;
-                }
-            }
-
-            return new PurgeDraftOffersResult(
-                totalOffers: offers.Count,
-                candidates: toDelete.Count,
-                deletedCount: deleted.Count,
-                candidatesList: toDelete,
-                deleted: deleted,
-                failed: failures);
         }
 
 
@@ -591,21 +351,6 @@ $@"<?xml version=""1.0"" encoding=""utf8""?>
 
 
         /// <summary>
-        /// Creates a configured HttpClient for eBay API requests.
-        /// </summary>
-        private static HttpClient NewClient(string accessToken, string marketplaceId, string? locale = null)
-        {
-            var http = new HttpClient();
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            http.DefaultRequestHeaders.TryAddWithoutValidation("XEBAYCMARKETPLACEID", marketplaceId);
-            if (!string.IsNullOrWhiteSpace(locale))
-                http.DefaultRequestHeaders.TryAddWithoutValidation("AcceptLanguage", locale);
-            return http;
-        }
-
-
-        /// <summary>
         /// Maps marketplace ID to eBay site ID.
         /// </summary>
         private static string MarketplaceToSiteId(string marketplace) => marketplace switch
@@ -692,57 +437,5 @@ $@"<?xml version=""1.0"" encoding=""utf8""?>
             static string Csv(string? s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
         }
         #endregion
-
-
-        /// <summary>
-        /// Retrieves active bids for the logged-in user.
-        /// </summary>
-        /// <returns>List of ItemSummary objects representing active bids.</returns>
-        public async Task<List<ItemSummary>> GetActiveBidsAsync()
-        {
-            var results = new List<ItemSummary>();
-            var tradingEndpoint = IsSandbox ? "https://api.sandbox.ebay.com/ws/api.dll" : "https://api.ebay.com/ws/api.dll";
-            var siteId = MarketplaceToSiteId(_config.MarketplaceId);
-
-            var reqXml =
-$@"<?xml version=""1.0"" encoding=""utf8""?>
-<GetBidderListRequest xmlns=""urn:ebay:apis:eBLBaseComponents"">
-  <ActiveItemsOnly>true</ActiveItemsOnly>
-  <UserID>{_config.ClientId}</UserID>
-  <GranularityLevel>Fine</GranularityLevel>
-</GetBidderListRequest>";
-
-            using var http = new HttpClient();
-            var msg = new HttpRequestMessage(HttpMethod.Post, tradingEndpoint)
-            { Content = new StringContent(reqXml, Encoding.UTF8, "text/xml") };
-
-            msg.Headers.Add("X-EBAY-API-COMPATIBILITY-LEVEL", "1207");
-            msg.Headers.Add("X-EBAY-API-DEV-NAME", _config.ClientId);
-            msg.Headers.Add("X-EBAY-API-APP-NAME", _config.ClientId);
-            msg.Headers.Add("X-EBAY-API-CERT-NAME", _config.ClientSecret);
-            msg.Headers.Add("X-EBAY-API-CALL-NAME", "GetBidderList");
-            msg.Headers.Add("X-EBAY-API-SITEID", siteId);
-            msg.Headers.Add("X-EBAY-API-IAF-TOKEN", await GetAccessTokenAsync());
-
-            using var resp = await http.SendAsync(msg);
-            var xml = await resp.Content.ReadAsStringAsync();
-            if (!resp.IsSuccessStatusCode)
-                throw new ApplicationException($"GetBidderList failed ({(int)resp.StatusCode} {resp.StatusCode}): {xml}");
-
-            var doc = XDocument.Parse(xml);
-            XNamespace ns = "urn:ebay:apis:eBLBaseComponents";
-            foreach (var item in doc.Descendants(ns + "Item"))
-            {
-                // Map XML fields to ItemSummary as needed
-                results.Add(new ItemSummary
-                {
-                    ItemId = item.Element(ns + "ItemID")?.Value,
-                    Title = item.Element(ns + "Title")?.Value,
-                    // Add other fields as needed
-                });
-            }
-
-            return results;
-        }
     }
 }

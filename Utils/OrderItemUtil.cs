@@ -15,10 +15,10 @@ public static class OrderItemUtil
         {
             Created = row[0]?.ToString() ?? "",
             Title = row[1]?.ToString() ?? "",
-            Price = row[5]?.ToString() ?? "",
-            TaxAmount = row[6]?.ToString() ?? "",
-            ShippingAmount = row[7]?.ToString() ?? "",
-            ItemId = row[9]?.ToString() ?? ""
+            Price = row[6]?.ToString() ?? "",
+            TaxAmount = row[7]?.ToString() ?? "",
+            ShippingAmount = row[8]?.ToString() ?? "",
+            ItemId = row[10]?.ToString() ?? ""
         };
     }
 }

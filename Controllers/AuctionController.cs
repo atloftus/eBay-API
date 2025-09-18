@@ -15,7 +15,6 @@ namespace eBay_API.Controllers
     public class AuctionController : ControllerBase
     {
         #region PROPERTIES
-        
         private readonly ILogger<AuctionController> _logger;
         private readonly Config _config;
         private readonly EbayService _ebayService;
@@ -68,86 +67,25 @@ namespace eBay_API.Controllers
             var centralZone = DateTimeUtil.FindCentralTimeZone();
             var results = new List<RunResult>();
 
-
-
-
-
-
-
-
-            // --- CASE HIT TAB LOGIC ---
-            var caseHitQueries = await _sheetService.GetAllRowsAsync<CaseHit>("CASE HITS", AuctionItemUtil.ToCaseHit);
-
-            foreach (var seller in _config.config.sellers)
-            {
-                _logger.LogInformation("Processing CASE HIT for seller: {Seller}", seller);
-
-                var tabName = $"CASE HITS - {seller}";
-
-                var sellerQueries = caseHitQueries
-                    .Select(q => $"{q.Sport} {q.Name} {q.Set}".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => InjectSeller(query, seller))
-                    .ToList();
-
-                var caseHits = await _ebayService.FetchItemsAsync(sellerQueries);
-
-                try
-                {
-                    if (caseHits.Count > 0)
-                    {
-                        // Use the same header as AuctionItem
-                        var headerRow = AuctionItem.FromItemSummary(caseHits.First(), centralZone).GetHeaderRow();
-                        await _sheetService.CreateTabAsync(tabName, headerRow);
-                        await _sheetService.ClearAllFiltersAsync();
-                        await _sheetService.DeleteAllRowsExceptHeaderAsync(tabName);
-                        await _sheetService.WriteItemsAsync(
-                            caseHits.Select(item => AuctionItem.FromItemSummary(item, centralZone)).ToList(),
-                            tabName,
-                            ai => ai.ToRow(),
-                            headerRow
-                        );
-                    }
-                    results.Add(new RunResult(tabName, caseHits.Count));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to persist CASE HIT items for seller {Seller}", seller);
-                    return Problem($"Failed to persist CASE HIT items for seller '{seller}'.");
-                }
-            }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            // --- EXISTING LOGIC FOR OTHER RUNS ---
             foreach (var seller in _config.config.sellers)
             {
                 _logger.LogInformation("Processing seller: {Seller}", seller);
 
+                List<RunConfig> runs = _config.config.runs.ToList();
+                var caseHits = await _sheetService.GetAllRowsAsync<CaseHit>("CASE HITS", CaseHitUtil.ToCaseHit);
+                var caseHitQueries = caseHits
+                    .Select(q => $"{q.Sport} {q.Name} {q.Set}".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList();
+                runs.Add(new RunConfig() { sheet = "CASE HITS", queries = caseHitQueries.ToArray() });
 
-
-                foreach (var run in _config.config.runs)
+                foreach (var run in runs)
                 {
                     _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
 
                     var tabName = $"{run.sheet} - {seller}";
 
-                    var sellerQueries = run.queries.Select(q => InjectSeller(q, seller)).ToList();
+                    var sellerQueries = run.queries.Select(q => QueryUtil.InjectSeller(q, seller)).ToList();
 
                     var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
 
@@ -179,114 +117,15 @@ namespace eBay_API.Controllers
                 }
             }
 
-
-
-
-
             return Ok(results);
-        }
-
-
-
-        private static string InjectSeller(string query, string seller)
-        {
-            int filterIndex = query.IndexOf("filter=");
-            if (filterIndex >= 0)
-            {
-                int insertIndex = query.IndexOf(',', filterIndex);
-                if (insertIndex >= 0)
-                {
-                    return query.Insert(insertIndex, $",sellers:{{{seller}}}");
-                }
-                else
-                {
-                    return query + $",sellers:{{{seller}}}";
-                }
-            }
-            else
-            {
-                return query + $",sellers:{{{seller}}}";
-            }
-        }
-
-
-        //IDEAS:
-        //TODO: Come up with other useful filtering methods for the Google Sheet (and make it an input param if you do)
-        //TODO: Add tracking for when I lose/win auactions and track what days I do best
-        //TODO: Add a way to filter by category so i dont get any baseball, hockey, marvel, mma, ufc, or soccer cards
-        //TODO: Figure out how to publish to the web and get/return the publish URL
-        //TODO: Create a method that can download a photo based on a url
-        //TODO: Think about expanding to COMC ($15 max shipping)..... or PSA ($6 base + $1 for each additional item).... or 4 sharp corners ($5 base + $1 for each additional item)
-        //TODO: Figure out how to get a list of all your active bids (maybe hide the ones that have gotten too expensive)
-        //TODO: Make functionality that lets me frequently update a sheet that shows me cards numbered to 50 or less that are ending today and still under $2... I need to get better at sniping low numbered cards for less than 2
-
-
-        /// <summary>
-        /// Test endpoint: applies the basic filter to the "PC" tab in the Google Sheet.
-        /// </summary>
-        /// <returns>200 OK if successful, or Problem if an error occurs.</returns>
-        [HttpPost("Test")]
-        public async Task<IActionResult> TEST()
-        {
-            try
-            {
-                //TODO: add logic to go and get all of my current bids and write them to the BIDS tab
-                return Ok("Basic filter applied to PC tab.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to set basic filter for PC tab.");
-                return Problem("Failed to set basic filter for PC tab.");
-            }
-        }
-
-
-        /// <summary>
-        /// Fetches and writes active bids to the "BIDS" tab in the Google Sheet.
-        /// </summary>
-        /// <remarks>
-        /// - Retrieves active bids from eBay.
-        /// - Transforms bid data into AuctionItem models.
-        /// - Creates or updates the "BIDS" tab in the Google Sheet.
-        /// - Writes the active bid items to the sheet, replacing any existing rows.
-        /// - Returns the count of written items or an error response if the operation fails.
-        /// </remarks>
-        /// <returns>
-        /// 200 OK with the count of active bids written,
-        /// or Problem response if an error occurs.
-        /// </returns>
-        [HttpPost("WriteMyActiveBidsToTable")]
-        public async Task<IActionResult> WriteMyActiveBidsToTable()
-        {
-            try
-            {
-                var centralZone = DateTimeUtil.FindCentralTimeZone();
-                var activeBids = await _ebayService.GetActiveBidsAsync();
-
-                var auctionItems = activeBids
-                    .Select(item => AuctionItem.FromItemSummary(item, centralZone))
-                    .ToList();
-
-                if (auctionItems.Count > 0)
-                {
-                    await _sheetService.CreateTabAsync("BIDS", auctionItems.First().GetHeaderRow());
-                    await _sheetService.DeleteAllRowsExceptHeaderAsync("BIDS");
-                    await _sheetService.WriteItemsAsync(
-                        auctionItems,
-                        "BIDS",
-                        ai => ai.ToRow(),
-                        auctionItems.First().GetHeaderRow()
-                    );
-                }
-
-                return Ok($"Wrote {auctionItems.Count} active bids to BIDS tab.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to write active bids to BIDS tab.");
-                return Problem("Failed to write active bids to BIDS tab.");
-            }
         }
         #endregion
     }
 }
+
+
+
+//IDEAS:
+//TODO: Come up with other useful filtering methods for the Google Sheet (and make it an input param if you do)
+//TODO: Add a way to filter by category so i dont get any baseball, hockey, marvel, mma, ufc, or soccer cards
+//TODO: Create a method that can download a photo based on a url

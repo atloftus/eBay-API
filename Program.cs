@@ -3,11 +3,10 @@ using eBay_API.Services;
 using Microsoft.Extensions.Options;
 
 
+
 var builder = WebApplication.CreateBuilder(args);
 
-
 builder.Configuration.AddJsonFile("config.json", optional: false, reloadOnChange: true);
-
 
 builder.Services.Configure<Config>(builder.Configuration);
 builder.Services.AddTransient<EbayService>(sp =>
@@ -24,9 +23,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-
 var app = builder.Build();
-
 
 if (app.Environment.IsDevelopment())
 {

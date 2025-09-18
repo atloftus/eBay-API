@@ -139,28 +139,9 @@ public static class AuctionItemUtil
     }
 
 
-
-    public static CaseHit? ToCaseHit(IList<object> row)
-    {
-        if (row == null || row.Count < 6) return null;
-
-        return new CaseHit
-        {
-            Sport = row[0]?.ToString(),
-            Name = row[1]?.ToString(),
-            Set = row[2]?.ToString(),
-            Years = row[3]?.ToString() ?? "0",
-            Type = row[4]?.ToString(),
-            Value = Int32.Parse(row[5]?.ToString())
-        };
-    }
-
-
     public static string ParseTitle(string title) =>
     title?.Replace("\"", "\"\"") ?? "";
 
-    public static bool ParseIsNumbered(string title) =>
-        !string.IsNullOrEmpty(title) && title.Contains("/");
 
     public static int ParseOutOf(string title)
     {
@@ -179,12 +160,14 @@ public static class AuctionItemUtil
         return 999999;
     }
 
+
     public static string ParsePSA(string title)
     {
         if (string.IsNullOrEmpty(title)) return "0";
         var psaMatch = Regex.Match(title, @"PSA (\d{1,2})");
         return psaMatch.Success ? psaMatch.Groups[1].Value : "0";
     }
+
 
     public static string ParseRC(string title)
     {
