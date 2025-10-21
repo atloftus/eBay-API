@@ -126,6 +126,6 @@ namespace eBay_API.Controllers
 
 
 //IDEAS:
-//TODO: Come up with other useful filtering methods for the Google Sheet (and make it an input param if you do)
-//TODO: Add a way to filter by category so i dont get any baseball, hockey, marvel, mma, ufc, or soccer cards
-//TODO: Create a method that can download a photo based on a url
+//TODO: Figure out a way to get my set collection into this mix
+//TODO: Get the case hit column working
+//TODO: Add a way to look for old cards (pree 1980)
