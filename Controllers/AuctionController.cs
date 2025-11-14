@@ -77,6 +77,8 @@ namespace eBay_API.Controllers
                     .Select(q => $"{q.Sport} {q.Name} {q.Set}".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
                     .Select(query => QueryUtil.InjectSeller(query, seller))
                     .ToList();
+                caseHitQueries.Add("(basketball, football) (SSP, Case Hit)&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}");
+
                 runs.Add(new RunConfig() { sheet = "CASE HITS", queries = caseHitQueries.ToArray() });
 
                 foreach (var run in runs)
@@ -128,4 +130,5 @@ namespace eBay_API.Controllers
 //IDEAS:
 //TODO: Figure out a way to get my set collection into this mix
 //TODO: Get the case hit column working
-//TODO: Add a way to look for old cards (pree 1980)
+//TODO: Add a way to look for old cards (pre 1980)
+//TODO: Get a way to look for specific Rookie cards
