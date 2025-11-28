@@ -53,17 +53,18 @@ namespace eBay_API.Controllers
         [HttpPost("WriteOrdersToTable")]
         public async Task<IActionResult> WriteOrdersToTable()
         {
-            string tabName = "ORDERS";
+            string sheetName = "ORDERS";
             var centralZone = DateTimeUtil.FindCentralTimeZone();
             var purchases = await _ebayService.GetBuyerLineItemsAsync(30);
             var orderItems = purchases.Select(OrderItem.FromLineItem).ToList();
 
             //Make sure that the tab exists
-            await _sheetService.CreateTabAsync(tabName, orderItems.First().GetHeaderRow());
+            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, orderItems.First().GetHeaderRow());
 
             // Get all current rows in the ORDERS TAB
             var existingOrderItems = await _sheetService.GetAllRowsAsync<OrderItem>(
-                tabName,
+                _config.googledrive.sheets.ebay,
+                sheetName,
                 row => OrderItemUtil.ToOrderItem(row)
                 );
 
@@ -89,17 +90,18 @@ namespace eBay_API.Controllers
                 })
                 .ToList();
 
-            await _sheetService.CreateTabAsync(tabName, allOrderItems.First().GetHeaderRow());
-            await _sheetService.ClearFiltersAsync(tabName);
-            await _sheetService.DeleteAllRowsExceptHeaderAsync(tabName);
+            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, allOrderItems.First().GetHeaderRow());
+            await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, sheetName);
+            await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
             await _sheetService.WriteItemsAsync(
+                _config.googledrive.sheets.ebay,
+                sheetName,
                 allOrderItems,
-                tabName,
                 ai => ai.ToRow(),
                 allOrderItems.First().GetHeaderRow()
             );
 
-            await _sheetService.SetBasicOrdersFilterAsync(tabName);
+            await _sheetService.SetBasicOrdersFilterAsync(_config.googledrive.sheets.ebay, sheetName);
 
             return Ok(new { items = orderItems.Count });
         }
