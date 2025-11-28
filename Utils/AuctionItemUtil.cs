@@ -143,6 +143,15 @@ public static class AuctionItemUtil
     title?.Replace("\"", "\"\"") ?? "";
 
 
+    public static string ParseCardYear(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "";
+        var yearMatch = Regex.Match(title, @"\b(\d{4})(?:-(\d{2}))?\b");
+        if (yearMatch.Success) return yearMatch.Groups[1].Value;
+        return "";
+    }
+
+
     public static int ParseOutOf(string title)
     {
         if (string.IsNullOrEmpty(title)) return 999999;
@@ -177,10 +186,27 @@ public static class AuctionItemUtil
     }
 
 
-    public static string ParseCaseHits(string title)
+    public static string ParseAuto(string title)
     {
-        //TODO: Implement this logic by checking to see if the title contains any of the case hit tittles in the list
-        return "No";
+        if (string.IsNullOrWhiteSpace(title)) return "No";
+        var lower = title.ToLowerInvariant();
+        return (lower.Contains(" auto ") || lower.Contains(" autograph ") || lower.Contains(" signatures ") || lower.Contains(" signings ")) ? "Yes" : "No";
+    }
+
+
+    public static string ParsePatch(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "No";
+        var lower = title.ToLowerInvariant();
+        return (lower.Contains(" jersey ") || lower.Contains(" patch ") || lower.Contains(" materials ")) ? "Yes" : "No";
+    }
+
+
+    public static string ParseCaseHit(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return "No";
+        var lower = title.ToLowerInvariant();
+        return (lower.Contains(" case hit ") || lower.Contains(" ssp ") || lower.Contains(" sp ")) ? "Yes" : "No";
     }
 
 

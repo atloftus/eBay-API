@@ -24,15 +24,24 @@ namespace eBay_API.Models.GoogleDrive
         public string PSA { get; set; }
 
         [ColumnOrder(6)]
-        public string Price { get; set; }
+        public string CaseHit { get; set; }
+
         [ColumnOrder(7)]
-        public string BidCount { get; set; }
+        public string Patch { get; set; }
+
         [ColumnOrder(8)]
-        public string EndDate { get; set; }
+        public string Auto { get; set; }
+
         [ColumnOrder(9)]
+        public string Price { get; set; }
+        [ColumnOrder(10)]
+        public string BidCount { get; set; }
+        [ColumnOrder(11)]
+        public string EndDate { get; set; }
+        [ColumnOrder(12)]
         public string EndTime { get; set; }
 
-        [ColumnOrder(10)]
+        [ColumnOrder(13)]
         public string ItemWebUrl { get; set; }
 
         #endregion
@@ -53,7 +62,7 @@ namespace eBay_API.Models.GoogleDrive
             return new AuctionItem
             {
                 Title = AuctionItemUtil.ParseTitle(item.Title),
-                Year = GoogleDriveService.ParseCardYear(item.Title),
+                Year = AuctionItemUtil.ParseCardYear(item.Title),
                 Price = item.CurrentBidPrice?.Value ?? "",
                 BidCount = item.BidCount?.ToString() ?? "",
                 EndDate = centralEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -61,7 +70,10 @@ namespace eBay_API.Models.GoogleDrive
                 OutOf = AuctionItemUtil.ParseOutOf(item.Title).ToString(),
                 Rookie = AuctionItemUtil.ParseRC(item.Title),
                 ItemWebUrl = AuctionItemUtil.FormatUrl(item.ItemWebUrl),
-                PSA = AuctionItemUtil.ParsePSA(item.Title)
+                PSA = AuctionItemUtil.ParsePSA(item.Title),
+                CaseHit = AuctionItemUtil.ParseCaseHit(item.Title),
+                Patch = AuctionItemUtil.ParsePatch(item.Title),
+                Auto = AuctionItemUtil.ParseAuto(item.Title)
             };
         }
         #endregion
