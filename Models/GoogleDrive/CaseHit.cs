@@ -10,9 +10,12 @@
         public string Set { get; set; }
 
         [ColumnOrder(3)]
-        public string Type { get; set; }
+        public string Image { get; set; }
 
         [ColumnOrder(4)]
+        public string Type { get; set; }
+
+        [ColumnOrder(5)]
         public int Value { get; set; }
         #endregion
     }

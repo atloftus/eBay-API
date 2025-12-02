@@ -90,25 +90,24 @@ namespace eBay_API.Controllers
 
 
                 // 2.) Get all PSA from basketball and football for this seller
-                runs.Add(new RunConfig() { sheet = $"2 - PSA - {seller}", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
+                runs.Add(new RunConfig() { sheet = $"2 - PSA", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
 
 
-                //TODO: Need to fix this section
-                //// 3.) Get all case hits from basketball and football for this seller
-                //List<string> queries3 = new List<string>();
-                //var caseHitsBasketball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit);
-                //queries3.AddRange(caseHitsBasketball
-                //    .Select(q => $"(basketball) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                //    .Select(query => QueryUtil.InjectSeller(query, seller))
-                //    .ToList());
+                // 3.) Get all case hits from basketball and football for this seller
+                List<string> queries3 = new List<string>();
+                var caseHitsBasketball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit);
+                queries3.AddRange(caseHitsBasketball
+                    .Select(q => $"(basketball) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList());
 
-                //var caseHitsFootball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit);
-                //queries3.AddRange(caseHitsFootball
-                //    .Select(q => $"(football) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                //    .Select(query => QueryUtil.InjectSeller(query, seller))
-                //    .ToList());
+                var caseHitsFootball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit);
+                queries3.AddRange(caseHitsFootball
+                    .Select(q => $"(football) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList());
 
-                //runs.Add(new RunConfig() { sheet = $"3 - Case Hits - {seller}", queries = queries3.ToArray() });
+                runs.Add(new RunConfig() { sheet = $"3 - Case Hits", queries = queries3.ToArray() });
 
 
                 foreach (var run in runs)
@@ -431,6 +430,79 @@ namespace eBay_API.Controllers
                                 combinedItems.First().GetHeaderRow()
                             );
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to persist items for run {RunName} and seller {Seller}", run.sheet, seller);
+                        return Problem($"Failed to persist items for run '{run.sheet}' and seller '{seller}'.");
+                    }
+
+                    results.Add(new RunResult(sheetName, combinedItems.Count));
+                }
+            }
+
+            return Ok(results);
+        }
+
+
+
+        /// <summary>
+        /// Fetches active eBay items for each configured run, filters and unifies them,
+        /// and writes the results to the corresponding Google Sheet tab.
+        /// </summary>
+        /// <remarks>
+        /// - Iterates over each run defined in configuration.
+        /// - Fetches new items from eBay using queries.
+        /// - Reads existing items from the Google Sheet.
+        /// - Filters and merges items using filter words and time zone.
+        /// - Recreates the sheet tab, deletes all rows except header, and writes the unified items.
+        /// - Logs errors and returns a problem response if any operation fails.
+        /// - Returns a summary of processed runs and item counts.
+        /// </remarks>
+        /// <returns>
+        /// 200 OK with <see cref="BuyResponse"/> containing processed run results,
+        /// or Problem response if an error occurs.
+        /// </returns>
+        [HttpPost("WriteMarksAuctionsToTable")]
+        public async Task<IActionResult> WriteMarksAuctionsToTable()
+        {
+            var centralZone = DateTimeUtil.FindCentralTimeZone();
+            var results = new List<RunResult>();
+
+            foreach (var seller in _config.config.sellers)
+            {
+                _logger.LogInformation("Processing seller: {Seller}", seller);
+
+                List<RunConfig> runs = _config.config.runs.ToList();
+
+                foreach (var run in runs)
+                {
+                    _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
+
+                    var sheetName = $"{run.sheet} - {seller}";
+
+                    var sellerQueries = run.queries.Select(q => QueryUtil.InjectSeller(q, seller)).ToList();
+
+                    var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
+
+                    List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync<AuctionItem>(_config.googledrive.sheets.ebay, sheetName, AuctionItemUtil.ToAuctionItem);
+
+                    var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
+
+                    var combinedItems = AuctionItemUtil.UnifyAndFilter(newItems, oldItems, filterWords, centralZone);
+
+                    try
+                    {
+                        await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
+                        await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                        await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
+                        await _sheetService.WriteItemsAsync(
+                            _config.googledrive.sheets.ebay,
+                            sheetName,
+                            combinedItems,
+                            ai => ai.ToRow(),
+                            combinedItems.First().GetHeaderRow()
+                        );
                     }
                     catch (Exception ex)
                     {

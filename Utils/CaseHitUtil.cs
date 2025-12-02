@@ -13,8 +13,9 @@ namespace eBay_API.Utils
             {
                 Name = row[0]?.ToString(),
                 Set = row[1]?.ToString(),
-                Type = row[2]?.ToString(),
-                Value = Int32.Parse(row[3]?.ToString())
+                Image = row[2]?.ToString(),
+                Type = row[3]?.ToString(),
+                Value = Int32.Parse(row[4]?.ToString())
             };
         }
         #endregion

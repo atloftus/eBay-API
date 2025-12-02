@@ -54,7 +54,13 @@ public class GoogleDriveService
         var getResponse = await getRequest.ExecuteAsync().ConfigureAwait(false);
         var rows = getResponse.Values?.ToList() ?? new List<IList<object>>();
         var result = new List<T>();
-        if (rowFactory != null) foreach (var row in rows) result.Add(rowFactory(row));
+        if (rowFactory != null)
+            foreach (var row in rows)
+                try { result.Add(rowFactory(row)); } 
+                catch (Exception ex) {
+                    var a = row;
+                    Console.WriteLine($"Error processing row: {ex.Message}"); }
+        
 
         return result;
     }
