@@ -554,6 +554,9 @@ namespace eBay_API.Controllers
                 // 2.) Get all PSA from basketball and football for this seller
                 queries.AddRange(new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
 
+                //TODO: Add GOATs
+                //TODO: Add case hits once they are finished being reviewed
+
                 //7.A) Get all numbered cards from basketball and football for this seller
                 queries.AddRange(new List<string> { QueryUtil.InjectSeller($"basketball card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
 
