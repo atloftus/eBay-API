@@ -557,11 +557,9 @@ namespace eBay_API.Controllers
                 //TODO: Add GOATs
                 //TODO: Add case hits once they are finished being reviewed
 
-                //7.A) Get all numbered cards from basketball and football for this seller
-                queries.AddRange(new List<string> { QueryUtil.InjectSeller($"basketball card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
-
                 runs.Add(new RunConfig() { sheet = $"100 - {seller}", queries = queries.ToArray() });
 
+                // 3.) Get all numbered cards from basketball and football for this seller
                 runs.Add(new RunConfig() { sheet = $"Numbered - {seller}", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
 
 
