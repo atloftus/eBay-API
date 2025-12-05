@@ -1,4 +1,6 @@
 ﻿using System.Reflection;
+using System.Collections.Generic;
+using System.Linq;
 
 
 
@@ -8,8 +10,10 @@ namespace eBay_API.Models.GoogleDrive
     {
         public IList<object> ToRow()
         {
+            // Exclude properties marked with [System.Text.Json.Serialization.JsonIgnore]
             var props = this.GetType()
                 .GetProperties()
+                .Where(p => p.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() == null)
                 .Select(p => new
                 {
                     Property = p,
@@ -24,8 +28,10 @@ namespace eBay_API.Models.GoogleDrive
 
         public IList<string> GetHeaderRow()
         {
+            // Keep headers consistent with ToRow by also excluding JsonIgnore properties
             return this.GetType()
                 .GetProperties()
+                .Where(p => p.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>() == null)
                 .Select(p => new
                 {
                     Property = p,

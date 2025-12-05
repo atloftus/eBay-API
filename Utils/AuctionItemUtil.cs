@@ -21,9 +21,17 @@ public static class AuctionItemUtil
             .Select(item => AuctionItem.FromItemSummary(item, centralZone))
             .ToList();
 
+        return UnifyAndFilter(newAuctionItems, oldItems, filterWords, centralZone);
+    }
+
+
+
+
+    public static List<AuctionItem> UnifyAndFilter(List<AuctionItem> newItems, List<AuctionItem> oldItems, IEnumerable<string> filterWords, TimeZoneInfo centralZone)
+    {
         // Combine new and old auction items
         var allAuctionItems = oldItems
-            .Concat(newAuctionItems)
+            .Concat(newItems)
             .ToList();
 
         // Filter by title words (case-insensitive)
@@ -33,7 +41,7 @@ public static class AuctionItemUtil
             .ToList();
 
         // Filter out Topps or Finest from 2016-2026
-        allAuctionItems = allAuctionItems 
+        allAuctionItems = allAuctionItems
             .Where(item =>
             {
                 if (item.Title == null) return true;
@@ -109,6 +117,10 @@ public static class AuctionItemUtil
 
         return allAuctionItems;
     }
+
+
+
+
 
 
     /// <summary>

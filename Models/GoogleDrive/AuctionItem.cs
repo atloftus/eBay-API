@@ -33,19 +33,30 @@ namespace eBay_API.Models.GoogleDrive
         public string Auto { get; set; }
 
         [ColumnOrder(9)]
-        public string Price { get; set; }
-        [ColumnOrder(10)]
-        public string BidCount { get; set; }
-        [ColumnOrder(11)]
         public string EndDate { get; set; }
-        [ColumnOrder(12)]
+        [ColumnOrder(10)]
         public string EndTime { get; set; }
 
-        [ColumnOrder(13)]
-        public string ItemWebUrl { get; set; }
+        private string itemWebUrl;
 
-        public DateTime StartDateTime { get; set; }
-        public DateTime EndDateTime { get; set; }
+        [ColumnOrder(11)]
+        public string ItemWebUrl 
+        {
+            get => itemWebUrl.Split("?")[0];
+            set => itemWebUrl = value;
+        }
+
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string Price { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string BidCount { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        internal DateTime StartDateTime { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        internal DateTime EndDateTime { get; set; }
 
         #endregion
 

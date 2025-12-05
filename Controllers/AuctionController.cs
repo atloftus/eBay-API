@@ -1,5 +1,6 @@
 ﻿using eBay_API.Models.Config;
 using eBay_API.Models.Controller.Buy;
+using eBay_API.Models.eBay.Response;
 using eBay_API.Models.GoogleDrive;
 using eBay_API.Services;
 using eBay_API.Utils;
@@ -93,21 +94,21 @@ namespace eBay_API.Controllers
                 runs.Add(new RunConfig() { sheet = $"2 - PSA", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
 
 
-                // 3.) Get all case hits from basketball and football for this seller
-                List<string> queries3 = new List<string>();
-                var caseHitsBasketball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit);
-                queries3.AddRange(caseHitsBasketball
-                    .Select(q => $"(basketball) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
+                //TODO: Uncomment this once done sifting through case hits 3.) Get all case hits from basketball and football for this seller
+                //List<string> queries3 = new List<string>();
+                //var caseHitsBasketball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit);
+                //queries3.AddRange(caseHitsBasketball
+                //    .Select(q => $"(basketball) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                //    .Select(query => QueryUtil.InjectSeller(query, seller))
+                //    .ToList());
 
-                var caseHitsFootball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit);
-                queries3.AddRange(caseHitsFootball
-                    .Select(q => $"(football) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
+                //var caseHitsFootball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit);
+                //queries3.AddRange(caseHitsFootball
+                //    .Select(q => $"(football) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                //    .Select(query => QueryUtil.InjectSeller(query, seller))
+                //    .ToList());
 
-                runs.Add(new RunConfig() { sheet = $"3 - Case Hits", queries = queries3.ToArray() });
+                //runs.Add(new RunConfig() { sheet = $"3 - Case Hits", queries = queries3.ToArray() });
 
 
                 foreach (var run in runs)
@@ -512,6 +513,106 @@ namespace eBay_API.Controllers
 
                     results.Add(new RunResult(sheetName, combinedItems.Count));
                 }
+            }
+
+            return Ok(results);
+        }
+
+
+
+        [HttpPost("WriteMarks100AuctionsToTable")]
+        public async Task<IActionResult> WriteMarks100AuctionsToTable()
+        {
+            var centralZone = DateTimeUtil.FindCentralTimeZone();
+            var results = new List<RunResult>();
+
+            foreach (var seller in _config.config.sellers)
+            {
+                _logger.LogInformation("Processing seller: {Seller}", seller);
+
+                List<RunConfig> runs = new List<RunConfig>();
+
+                var sheetName = $"100 - {seller}";
+
+                List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync<AuctionItem>(_config.googledrive.sheets.ebay, sheetName, AuctionItemUtil.ToAuctionItem);
+                List<AuctionItem> newItems = new List<AuctionItem>();
+
+                // 1.) Get all level 5 brands from basketball and football for this seller
+                List<string> queries = new List<string>();
+                var topTierBasketballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Brands", BrandUtil.ToBrand);
+                queries.AddRange(topTierBasketballBrands.Where(b => b.Value == 5)
+                    .Select(q => $"(basketball) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList());
+
+                var topTierFootballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Brands", BrandUtil.ToBrand);
+                queries.AddRange(topTierFootballBrands.Where(b => b.Value == 5)
+                    .Select(q => $"(football) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList());
+
+                // 2.) Get all PSA from basketball and football for this seller
+                queries.AddRange(new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
+
+                //7.A) Get all numbered cards from basketball and football for this seller
+                queries.AddRange(new List<string> { QueryUtil.InjectSeller($"basketball card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
+
+                runs.Add(new RunConfig() { sheet = $"100 - {seller}", queries = queries.ToArray() });
+
+                runs.Add(new RunConfig() { sheet = $"Numbered - {seller}", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
+
+
+                foreach (var run in runs)
+                {
+                    _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
+
+                    if (run.sheet.Contains("Numbered"))
+                    {
+                        var tempNewItems = await _ebayService.FetchItemsAsync(run.queries);
+                        var newAuctionItems = tempNewItems
+                            .Select(item => AuctionItem.FromItemSummary(item, centralZone))
+                            .ToList();
+
+                        // 7.) Get all /40 or less from basketball and football for this seller
+                        var items40OrLess = newAuctionItems.Where(x => Int32.Parse(x.OutOf) <= 40).ToList();
+                        newItems.AddRange(items40OrLess);
+
+                        // 8.) Get all rookies, patches, or autos from basketball and football for this seller
+                        var itemsRPAs = newAuctionItems.Where(x => (x.Auto.ToLower() == "yes") && (x.Rookie.ToLower() == "yes") && (x.Patch.ToLower() == "yes")).ToList();
+                        newItems.AddRange(itemsRPAs);
+                    }
+                    else
+                    {
+                        var tempNewItems = await _ebayService.FetchItemsAsync(run.queries);
+                        newItems.AddRange(tempNewItems
+                            .Select(item => AuctionItem.FromItemSummary(item, centralZone))
+                            .ToList());
+                    }
+                }
+
+                var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
+                var combinedItems = AuctionItemUtil.UnifyAndFilter(newItems, oldItems, filterWords, centralZone);
+
+                try
+                {
+                    await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
+                    await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                    await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
+                    await _sheetService.WriteItemsAsync(
+                        _config.googledrive.sheets.ebay,
+                        sheetName,
+                        combinedItems,
+                        ai => ai.ToRow(),
+                        combinedItems.First().GetHeaderRow()
+                    );
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to persist items for run {RunName} and seller {Seller}", "100", seller);
+                    return Problem($"Failed to persist items for run 100 and seller '{seller}'.");
+                }
+
+                results.Add(new RunResult(sheetName, combinedItems.Count));
             }
 
             return Ok(results);
