@@ -617,6 +617,9 @@ namespace eBay_API.Controllers
 
             return Ok(results);
         }
+
+
+        //TODO: Need to create a 50/50 method
         #endregion
     }
 }
