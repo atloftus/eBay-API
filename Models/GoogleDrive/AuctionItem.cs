@@ -44,6 +44,9 @@ namespace eBay_API.Models.GoogleDrive
         [ColumnOrder(13)]
         public string ItemWebUrl { get; set; }
 
+        public DateTime StartDateTime { get; set; }
+        public DateTime EndDateTime { get; set; }
+
         #endregion
 
 
@@ -58,6 +61,7 @@ namespace eBay_API.Models.GoogleDrive
         public static AuctionItem FromItemSummary(ItemSummary item, TimeZoneInfo centralZone)
         {
             DateTime centralEndDate = TimeZoneInfo.ConvertTimeFromUtc(item.ItemEndDate, centralZone);
+            DateTime centralStartDate = TimeZoneInfo.ConvertTimeFromUtc(item.ItemCreationDate, centralZone);
 
             return new AuctionItem
             {
@@ -67,6 +71,8 @@ namespace eBay_API.Models.GoogleDrive
                 BidCount = item.BidCount?.ToString() ?? "",
                 EndDate = centralEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 EndTime = centralEndDate.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+                StartDateTime = centralStartDate,
+                EndDateTime = centralEndDate,
                 OutOf = AuctionItemUtil.ParseOutOf(item.Title).ToString(),
                 Rookie = AuctionItemUtil.ParseRC(item.Title),
                 ItemWebUrl = AuctionItemUtil.FormatUrl(item.ItemWebUrl),

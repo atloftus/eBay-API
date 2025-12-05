@@ -104,7 +104,7 @@ public static class AuctionItemUtil
 
         // Remove all items that have a bid count higher than 0
         allAuctionItems = allAuctionItems
-            .Where(item => int.TryParse(item.BidCount, out var bc) ? bc == 0 : true)
+            .Where(item => (int.TryParse(item.BidCount, out var bc) ? bc == 0 : true) && ((item.EndDateTime - item.StartDateTime) == TimeSpan.FromDays(5)))
             .ToList();
 
         return allAuctionItems;

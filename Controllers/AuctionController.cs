@@ -86,7 +86,7 @@ namespace eBay_API.Controllers
                     .Select(query => QueryUtil.InjectSeller(query, seller))
                     .ToList());
 
-                runs.Add(new RunConfig() { sheet = $"1 - Top Tier Brands - {seller}", queries = queries1.ToArray() });
+                runs.Add(new RunConfig() { sheet = $"1 - Top Tier Brands", queries = queries1.ToArray() });
 
 
                 // 2.) Get all PSA from basketball and football for this seller
