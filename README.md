@@ -23,7 +23,8 @@ SUNDAY:
 
 
 
-- 
+
+
 IDEAS:
 - I should come up with a way to look at low bid items that are worth a lot more.... do this by adding it to your watchlist.... then have a program that auto opens a page with 1 min left
 - try 1 2 punching (I place first bid at .99... then dad places bid at 1.01) and see if it gets better results because people see it as 2 bidders not 1
