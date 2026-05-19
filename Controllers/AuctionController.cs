@@ -75,13 +75,13 @@ namespace eBay_API.Controllers
 
                 // 1.) Get all level 5 brands from basketball and football for this seller
                 List<string> queries1 = new List<string>();
-                var topTierBasketballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Brands", BrandUtil.ToBrand);
+                var topTierBasketballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Sets", BrandUtil.ToBrand);
                 queries1.AddRange(topTierBasketballBrands.Where(b => b.Value == 5)
                     .Select(q => $"(basketball) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
                     .Select(query => QueryUtil.InjectSeller(query, seller))
                     .ToList());
 
-                var topTierFootballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Brands", BrandUtil.ToBrand);
+                var topTierFootballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Sets", BrandUtil.ToBrand);
                 queries1.AddRange(topTierFootballBrands.Where(b => b.Value == 5)
                     .Select(q => $"(football) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
                     .Select(query => QueryUtil.InjectSeller(query, seller))
@@ -94,21 +94,21 @@ namespace eBay_API.Controllers
                 runs.Add(new RunConfig() { sheet = $"2 - PSA", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
 
 
-                //TODO: Uncomment this once done sifting through case hits 3.) Get all case hits from basketball and football for this seller
-                //List<string> queries3 = new List<string>();
-                //var caseHitsBasketball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit);
-                //queries3.AddRange(caseHitsBasketball
-                //    .Select(q => $"(basketball) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                //    .Select(query => QueryUtil.InjectSeller(query, seller))
-                //    .ToList());
+                // 3.) Get all case hits from basketball and football for this seller
+                List<string> queries3 = new List<string>();
+                var caseHitsBasketball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit);
+                queries3.AddRange(caseHitsBasketball
+                    .Select(q => $"(basketball) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList());
 
-                //var caseHitsFootball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit);
-                //queries3.AddRange(caseHitsFootball
-                //    .Select(q => $"(football) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                //    .Select(query => QueryUtil.InjectSeller(query, seller))
-                //    .ToList());
+                var caseHitsFootball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit);
+                queries3.AddRange(caseHitsFootball
+                    .Select(q => $"(football) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
+                    .Select(query => QueryUtil.InjectSeller(query, seller))
+                    .ToList());
 
-                //runs.Add(new RunConfig() { sheet = $"3 - Case Hits", queries = queries3.ToArray() });
+                runs.Add(new RunConfig() { sheet = $"3 - Case Hits", queries = queries3.ToArray() });
 
 
                 foreach (var run in runs)
@@ -129,6 +129,8 @@ namespace eBay_API.Controllers
 
                     try
                     {
+                        if (combinedItems.Count == 0) continue;
+
                         await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
                         await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
                         await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
@@ -254,6 +256,8 @@ namespace eBay_API.Controllers
 
                     try
                     {
+                        if (combinedItems.Count == 0) continue;
+
                         await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
                         await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
                         await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
@@ -420,6 +424,8 @@ namespace eBay_API.Controllers
                         }
                         else
                         {
+                            if (combinedItems.Count == 0) continue;
+
                             await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
                             await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
                             await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);

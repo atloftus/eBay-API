@@ -9,7 +9,7 @@ namespace eBay_API.Models.GoogleDrive
     {
         #region PROPERTIES
         [ColumnOrder(1)]
-        public string Title { get; set; }
+        public string Title { get; set; } = "";
 
         [ColumnOrder(2)]
         public string Year { get; set; }
