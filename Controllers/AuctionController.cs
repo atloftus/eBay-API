@@ -418,9 +418,9 @@ namespace eBay_API.Controllers
 
 
                             //IDEAS:
-                            //TODO: Figure out a way to get my set collection into this mix
-                            //TODO: Add a way to look for old cards (pre 1980)
-                            //TODO: Get a way to look for specific Rookie cards
+                            //Figure out a way to get my set collection into this mix
+                            //Add a way to look for old cards (pre 1980)
+                            //Get a way to look for specific Rookie cards
                         }
                         else
                         {
@@ -560,8 +560,8 @@ namespace eBay_API.Controllers
                 // 2.) Get all PSA from basketball and football for this seller
                 queries.AddRange(new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
 
-                //TODO: Add GOATs
-                //TODO: Add case hits once they are finished being reviewed
+                //Add GOATs
+                //Add case hits once they are finished being reviewed
 
                 runs.Add(new RunConfig() { sheet = $"100 - {seller}", queries = queries.ToArray() });
 
@@ -626,7 +626,42 @@ namespace eBay_API.Controllers
         }
 
 
-        //TODO: Need to create a 50/50 method
+
+
+
+
+
+
+        [HttpPost("WriteActiveAuctionsToTable")]
+        public async Task<IActionResult> WriteActiveAuctionsToTable()
+        {
+            var centralZone = DateTimeUtil.FindCentralTimeZone();
+            var results = new List<RunResult>();
+
+            foreach (var seller in _config.config.sellers)
+            {
+                _logger.LogInformation("Processing seller: {Seller}", seller);
+
+                // Get all football and basketball cards
+                var rawEbayItems = await _ebayService.FetchItemsAsync(new List<string> { QueryUtil.InjectSeller($"basketball card".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
+
+                var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
+
+                var filteredEbayItems = AuctionItemUtil.UnifyAndFilter(rawEbayItems, new List<AuctionItem>(), filterWords, centralZone);
+
+
+                // Write, and Remove each matching row
+                // 1.) Get all level 5 brands from basketball and football for this seller
+                List<Brand> level5Brands = new List<Brand>();
+                List<string> queries1 = new List<string>();
+                level5Brands.AddRange(await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Sets", BrandUtil.ToBrand));
+                level5Brands.AddRange(await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Sets", BrandUtil.ToBrand));
+
+                var level5BrandItems = filteredEbayItems.Where(item => level5Brands.Any(brand => item.Title.Contains(brand.Name, StringComparison.OrdinalIgnoreCase))).ToList();
+            }
+
+            return Ok(results);
+        }
         #endregion
     }
 }
