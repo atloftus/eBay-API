@@ -72,7 +72,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "1 - Value 5 Brands", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "1 - Value 5 Brands");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "1 - Value 5 Brands");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -81,6 +81,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(value5BrandItems);
@@ -92,7 +94,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "2 - Graded", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "2 - Graded");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "2 - Graded");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -101,6 +103,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(gradedItems);
@@ -112,7 +116,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "3 - Numbered <=40", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "3 - Numbered <=40");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "3 - Numbered <=40");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -121,6 +125,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(lowerThan40Items);
@@ -132,7 +138,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "4 - RPAs", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "4 - RPAs");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "4 - RPAs");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -141,6 +147,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(rpaItems);
@@ -156,7 +164,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "5 - Case Hits", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "5 - Case Hits");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "5 - Case Hits");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -165,6 +173,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(caseHitItems);
@@ -180,7 +190,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "6 - GOATS", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "6 - GOATS");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "6 - GOATS");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -189,6 +199,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(goatItems);
@@ -204,7 +216,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "7 - PC", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "7 - PC");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "7 - PC");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -213,6 +225,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(pcItems);
@@ -228,7 +242,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "8 - Stars", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "8 - Stars");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "8 - Stars");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -237,6 +251,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(starItems);
@@ -252,7 +268,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "9 - Value 4 Brands", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "9 - Value 4 Brands");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "9 - Value 4 Brands");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -261,6 +277,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(value4BrandItems);
@@ -272,7 +290,7 @@ namespace eBay_API.Controllers
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "10 - Numbered <=100", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "10 - Numbered <=100");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "10 - Numbered <=100");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -281,6 +299,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
                 // Remove these items from filteredEbayItems
                 selectedItems.AddRange(lowerThan100Items);
@@ -289,7 +309,7 @@ namespace eBay_API.Controllers
 
                 // 11.) Get all remaining cards
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "11 - Remaining", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "11 - Remaining");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "11 - Remaining");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -298,11 +318,13 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
 
 
                 // 12.) Get all selected cards
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "12 - Selected", (new AuctionItem()).GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.ClearFiltersAsync(_config.googledrive.sheets.ebay, "12 - Selected");
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "12 - Selected");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
@@ -311,6 +333,8 @@ namespace eBay_API.Controllers
                     ai => ai.ToRow(),
                     (new AuctionItem()).GetHeaderRow()
                 );
+                // Final pause to avoid Google Sheets API quota limits
+                await Task.Delay(30000);
             }
 
             return Ok(results);
