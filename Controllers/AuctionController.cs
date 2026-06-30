@@ -1,12 +1,11 @@
 ﻿using eBay_API.Models.Config;
 using eBay_API.Models.Controller.Buy;
-using eBay_API.Models.eBay.Response;
 using eBay_API.Models.GoogleDrive;
 using eBay_API.Services;
 using eBay_API.Utils;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using System.Text;
+
 
 
 namespace eBay_API.Controllers
@@ -45,594 +44,6 @@ namespace eBay_API.Controllers
 
 
         #region METHODS
-        /// <summary>
-        /// Fetches active eBay items for each configured run, filters and unifies them,
-        /// and writes the results to the corresponding Google Sheet tab.
-        /// </summary>
-        /// <remarks>
-        /// - Iterates over each run defined in configuration.
-        /// - Fetches new items from eBay using queries.
-        /// - Reads existing items from the Google Sheet.
-        /// - Filters and merges items using filter words and time zone.
-        /// - Recreates the sheet tab, deletes all rows except header, and writes the unified items.
-        /// - Logs errors and returns a problem response if any operation fails.
-        /// - Returns a summary of processed runs and item counts.
-        /// </remarks>
-        /// <returns>
-        /// 200 OK with <see cref="BuyResponse"/> containing processed run results,
-        /// or Problem response if an error occurs.
-        /// </returns>
-        [HttpPost("WriteActiveAuctionsToTableW1")]
-        public async Task<IActionResult> WriteActiveAuctionsToTableW1()
-        {
-            var centralZone = DateTimeUtil.FindCentralTimeZone();
-            var results = new List<RunResult>();
-
-            foreach (var seller in _config.config.sellers)
-            {
-                _logger.LogInformation("Processing seller: {Seller}", seller);
-
-                List<RunConfig> runs = new List<RunConfig>();
-
-                // 1.) Get all level 5 brands from basketball and football for this seller
-                List<string> queries1 = new List<string>();
-                var topTierBasketballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Sets", BrandUtil.ToBrand);
-                queries1.AddRange(topTierBasketballBrands.Where(b => b.Value == 5)
-                    .Select(q => $"(basketball) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                var topTierFootballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Sets", BrandUtil.ToBrand);
-                queries1.AddRange(topTierFootballBrands.Where(b => b.Value == 5)
-                    .Select(q => $"(football) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                runs.Add(new RunConfig() { sheet = $"1 - Top Tier Brands", queries = queries1.ToArray() });
-
-
-                // 2.) Get all PSA from basketball and football for this seller
-                runs.Add(new RunConfig() { sheet = $"2 - PSA", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
-
-
-                // 3.) Get all case hits from basketball and football for this seller
-                List<string> queries3 = new List<string>();
-                var caseHitsBasketball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit);
-                queries3.AddRange(caseHitsBasketball
-                    .Select(q => $"(basketball) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                var caseHitsFootball = await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit);
-                queries3.AddRange(caseHitsFootball
-                    .Select(q => $"(football) ({q.Set} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                runs.Add(new RunConfig() { sheet = $"3 - Case Hits", queries = queries3.ToArray() });
-
-
-                foreach (var run in runs)
-                {
-                    _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
-
-                    var sheetName = $"{run.sheet} - {seller}";
-
-                    var sellerQueries = run.queries.Select(q => QueryUtil.InjectSeller(q, seller)).ToList();
-
-                    var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
-
-                    List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync(_config.googledrive.sheets.ebay, sheetName, AuctionItemUtil.ToAuctionItem);
-
-                    var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
-
-                    var combinedItems = AuctionItemUtil.UnifyAndFilter(newItems, oldItems, filterWords, centralZone);
-
-                    try
-                    {
-                        if (combinedItems.Count == 0) continue;
-
-                        await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
-                        await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                        await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                        await _sheetService.WriteItemsAsync(
-                            _config.googledrive.sheets.ebay,
-                            sheetName,
-                            combinedItems,
-                            ai => ai.ToRow(),
-                            combinedItems.First().GetHeaderRow()
-                        );
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to persist items for run {RunName} and seller {Seller}", run.sheet, seller);
-                        return Problem($"Failed to persist items for run '{run.sheet}' and seller '{seller}'.");
-                    }
-
-                    results.Add(new RunResult(sheetName, combinedItems.Count));
-                }
-            }
-
-            return Ok(results);
-        }
-
-
-
-        /// <summary>
-        /// Fetches active eBay items for each configured run, filters and unifies them,
-        /// and writes the results to the corresponding Google Sheet tab.
-        /// </summary>
-        /// <remarks>
-        /// - Iterates over each run defined in configuration.
-        /// - Fetches new items from eBay using queries.
-        /// - Reads existing items from the Google Sheet.
-        /// - Filters and merges items using filter words and time zone.
-        /// - Recreates the sheet tab, deletes all rows except header, and writes the unified items.
-        /// - Logs errors and returns a problem response if any operation fails.
-        /// - Returns a summary of processed runs and item counts.
-        /// </remarks>
-        /// <returns>
-        /// 200 OK with <see cref="BuyResponse"/> containing processed run results,
-        /// or Problem response if an error occurs.
-        /// </returns>
-        [HttpPost("WriteActiveAuctionsToTableW2")]
-        public async Task<IActionResult> WriteActiveAuctionsToTableW2()
-        {
-            var centralZone = DateTimeUtil.FindCentralTimeZone();
-            var results = new List<RunResult>();
-
-            foreach (var seller in _config.config.sellers)
-            {
-                _logger.LogInformation("Processing seller: {Seller}", seller);
-
-                List<RunConfig> runs = new List<RunConfig>();
-
-                // 4.) Get all GOATS from basketball and football for this seller
-                List<string> queries4 = new List<string>();
-                var goatsBasketball = await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer);
-                queries4.AddRange(goatsBasketball.Where(b => b.GOAT.ToLower() == "yes")
-                    .Select(q => $"(basketball) ({q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                var goatsFootball = await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer);
-                queries4.AddRange(goatsFootball.Where(b => b.GOAT.ToLower() == "yes")
-                    .Select(q => $"(football) ({q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                runs.Add(new RunConfig() { sheet = $"4 - GOATS - {seller}", queries = queries4.ToArray() });
-
-
-                //5.) Get all PC from basketball and football for this seller
-                List<string> queries5 = new List<string>();
-                var pcBasketball = await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer);
-                queries5.AddRange(pcBasketball.Where(b => b.CollectionArea.ToLower() == "pc")
-                    .Select(q => $"(basketball) ({q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                var pcFootball = await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer);
-                queries5.AddRange(pcFootball.Where(b => b.CollectionArea.ToLower() == "pc")
-                    .Select(q => $"(football) ({q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                runs.Add(new RunConfig() { sheet = $"5 - PC - {seller}", queries = queries5.ToArray() });
-
-
-
-                // 6.) Get all numbered stars from basketball and football for this seller
-                List<string> queries6 = new List<string>();
-                var starsBasketball = await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer);
-                queries6.AddRange(starsBasketball.Where(b => b.CollectionArea.ToLower() == "stars")
-                   .Select(q => $"(basketball) ({q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                   .Select(query => QueryUtil.InjectSeller(query, seller))
-                   .ToList());
-
-                var starsFootball = await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer);
-                queries6.AddRange(starsFootball.Where(b => b.CollectionArea.ToLower() == "stars")
-                   .Select(q => $"(football) ({q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                   .Select(query => QueryUtil.InjectSeller(query, seller))
-                   .ToList());
-
-                runs.Add(new RunConfig() { sheet = $"6 - Stars - {seller}", queries = queries6.ToArray() });
-
-
-                foreach (var run in runs)
-                {
-                    _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
-
-                    var sheetName = $"{run.sheet} - {seller}";
-
-                    var sellerQueries = run.queries.Select(q => QueryUtil.InjectSeller(q, seller)).ToList();
-
-                    var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
-
-                    List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync(_config.googledrive.sheets.ebay, sheetName, AuctionItemUtil.ToAuctionItem);
-
-                    var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
-
-                    var combinedItems = AuctionItemUtil.UnifyAndFilter(newItems, oldItems, filterWords, centralZone);
-
-                    try
-                    {
-                        if (combinedItems.Count == 0) continue;
-
-                        await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
-                        await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                        await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                        await _sheetService.WriteItemsAsync(
-                            _config.googledrive.sheets.ebay,
-                            sheetName,
-                            combinedItems,
-                            ai => ai.ToRow(),
-                            combinedItems.First().GetHeaderRow()
-                        );
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to persist items for run {RunName} and seller {Seller}", run.sheet, seller);
-                        return Problem($"Failed to persist items for run '{run.sheet}' and seller '{seller}'.");
-                    }
-
-                    results.Add(new RunResult(sheetName, combinedItems.Count));
-                }
-            }
-
-            return Ok(results);
-        }
-
-
-
-        /// <summary>
-        /// Fetches active eBay items for each configured run, filters and unifies them,
-        /// and writes the results to the corresponding Google Sheet tab.
-        /// </summary>
-        /// <remarks>
-        /// - Iterates over each run defined in configuration.
-        /// - Fetches new items from eBay using queries.
-        /// - Reads existing items from the Google Sheet.
-        /// - Filters and merges items using filter words and time zone.
-        /// - Recreates the sheet tab, deletes all rows except header, and writes the unified items.
-        /// - Logs errors and returns a problem response if any operation fails.
-        /// - Returns a summary of processed runs and item counts.
-        /// </remarks>
-        /// <returns>
-        /// 200 OK with <see cref="BuyResponse"/> containing processed run results,
-        /// or Problem response if an error occurs.
-        /// </returns>
-        [HttpPost("WriteActiveAuctionsToTableW3")]
-        public async Task<IActionResult> WriteActiveAuctionsToTableW3()
-        {
-            var centralZone = DateTimeUtil.FindCentralTimeZone();
-            var results = new List<RunResult>();
-
-            foreach (var seller in _config.config.sellers)
-            {
-                _logger.LogInformation("Processing seller: {Seller}", seller);
-
-                List<RunConfig> runs = new List<RunConfig>();
-
-                //7.A) Get all numbered cards from basketball and football for this seller
-                runs.Add(new RunConfig() { sheet = $"7 - Numbered - {seller}", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
-
-
-                foreach (var run in runs)
-                {
-                    _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
-
-                    var sheetName = $"{run.sheet} - {seller}";
-
-                    var sellerQueries = run.queries.Select(q => QueryUtil.InjectSeller(q, seller)).ToList();
-
-                    var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
-
-                    List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync(_config.googledrive.sheets.ebay, sheetName, AuctionItemUtil.ToAuctionItem);
-
-                    var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
-
-                    var combinedItems = AuctionItemUtil.UnifyAndFilter(newItems, oldItems, filterWords, centralZone);
-
-                    try
-                    {
-                        if (run.sheet.Contains("Numbered"))
-                        {
-                            // 7.) Get all /40 or less from basketball and football for this seller
-                            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"7 - Numbered <=40 - {seller}", combinedItems.First().GetHeaderRow());
-                            await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                            await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                            var items40OrLess = combinedItems.Where(x => Int32.Parse(x.OutOf) <= 40).ToList();
-                            await _sheetService.WriteItemsAsync(
-                                _config.googledrive.sheets.ebay,
-                                $"7 - Numbered <=40 - {seller}",
-                                items40OrLess,
-                                ai => ai.ToRow(),
-                                combinedItems.First().GetHeaderRow()
-                            );
-
-
-                            // 8.) Get all rookies, patches, or autos from basketball and football for this seller
-                            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"8 - RPAs - {seller}", combinedItems.First().GetHeaderRow());
-                            await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                            await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                            var itemsRPAs = combinedItems.Where(x => (x.Auto.ToLower() == "yes") && (x.Rookie.ToLower() == "yes") && (x.Patch.ToLower() == "yes")).ToList();
-                            await _sheetService.WriteItemsAsync(
-                                _config.googledrive.sheets.ebay,
-                                $"8 - RPAs - {seller}",
-                                itemsRPAs,
-                                ai => ai.ToRow(),
-                                combinedItems.First().GetHeaderRow()
-                            );
-
-
-                            // 9.) Get all level 4 brands from basketball and football for this seller
-                            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"9 - Mid-High Tier Brands - {seller}", combinedItems.First().GetHeaderRow());
-                            await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                            await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                            var itemsLevel4 = new List<AuctionItem>();
-
-                            List<string> level4Brands = new List<string>();
-                            var midTopTierBasketballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Brands", BrandUtil.ToBrand);
-                            level4Brands.AddRange(midTopTierBasketballBrands.Where(b => b.Value == 4).Select(a => a.Name).ToList());
-
-                            var midTopTierFootballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Brands", BrandUtil.ToBrand);
-                            level4Brands.AddRange(midTopTierFootballBrands.Where(b => b.Value == 4).Select(a => a.Name).ToList());
-
-                            itemsLevel4.AddRange(combinedItems.Where(item => level4Brands.Distinct().Any(brand => item.Title.Contains(brand, StringComparison.OrdinalIgnoreCase))).ToList());
-
-                            await _sheetService.WriteItemsAsync(
-                                _config.googledrive.sheets.ebay,
-                                $"9 - Mid-High Tier Brands - {seller}",
-                                itemsLevel4,
-                                ai => ai.ToRow(),
-                                combinedItems.First().GetHeaderRow()
-                            );
-
-
-                            // 10.) Get all /100 or less from basketball and football for this seller
-                            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"10 - Numbered <= 100 - {seller}", combinedItems.First().GetHeaderRow());
-                            await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                            await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                            var items100OrLess = combinedItems.Where(x => (Int32.Parse(x.OutOf) > 40) && (Int32.Parse(x.OutOf) <= 100)).ToList();
-                            await _sheetService.WriteItemsAsync(
-                                _config.googledrive.sheets.ebay,
-                                $"10 - Numbered <= 100 - {seller}",
-                                items100OrLess,
-                                ai => ai.ToRow(),
-                                combinedItems.First().GetHeaderRow()
-                            );
-
-
-                            // 11.) Get all remaining numbered cards over 100 from basketball and football for this seller
-                            var remainingItems = combinedItems.Except(items40OrLess).Except(itemsRPAs).Except(itemsLevel4).Except(items100OrLess).ToList();
-                            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"11 - Numbered > 100 - {seller}", combinedItems.First().GetHeaderRow());
-                            await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                            await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                            await _sheetService.WriteItemsAsync(
-                               _config.googledrive.sheets.ebay,
-                               $"11 - Numbered > 100 - {seller}",
-                               remainingItems,
-                               ai => ai.ToRow(),
-                               combinedItems.First().GetHeaderRow()
-                           );
-
-
-                            //IDEAS:
-                            //Figure out a way to get my set collection into this mix
-                            //Add a way to look for old cards (pre 1980)
-                            //Get a way to look for specific Rookie cards
-                        }
-                        else
-                        {
-                            if (combinedItems.Count == 0) continue;
-
-                            await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
-                            await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                            await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                            await _sheetService.WriteItemsAsync(
-                                _config.googledrive.sheets.ebay,
-                                sheetName,
-                                combinedItems,
-                                ai => ai.ToRow(),
-                                combinedItems.First().GetHeaderRow()
-                            );
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to persist items for run {RunName} and seller {Seller}", run.sheet, seller);
-                        return Problem($"Failed to persist items for run '{run.sheet}' and seller '{seller}'.");
-                    }
-
-                    results.Add(new RunResult(sheetName, combinedItems.Count));
-                }
-            }
-
-            return Ok(results);
-        }
-
-
-
-        /// <summary>
-        /// Fetches active eBay items for each configured run, filters and unifies them,
-        /// and writes the results to the corresponding Google Sheet tab.
-        /// </summary>
-        /// <remarks>
-        /// - Iterates over each run defined in configuration.
-        /// - Fetches new items from eBay using queries.
-        /// - Reads existing items from the Google Sheet.
-        /// - Filters and merges items using filter words and time zone.
-        /// - Recreates the sheet tab, deletes all rows except header, and writes the unified items.
-        /// - Logs errors and returns a problem response if any operation fails.
-        /// - Returns a summary of processed runs and item counts.
-        /// </remarks>
-        /// <returns>
-        /// 200 OK with <see cref="BuyResponse"/> containing processed run results,
-        /// or Problem response if an error occurs.
-        /// </returns>
-        [HttpPost("WriteMarksAuctionsToTable")]
-        public async Task<IActionResult> WriteMarksAuctionsToTable()
-        {
-            var centralZone = DateTimeUtil.FindCentralTimeZone();
-            var results = new List<RunResult>();
-
-            foreach (var seller in _config.config.sellers)
-            {
-                _logger.LogInformation("Processing seller: {Seller}", seller);
-
-                List<RunConfig> runs = _config.config.runs.ToList();
-
-                foreach (var run in runs)
-                {
-                    _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
-
-                    var sheetName = $"{run.sheet} - {seller}";
-
-                    var sellerQueries = run.queries.Select(q => QueryUtil.InjectSeller(q, seller)).ToList();
-
-                    var newItems = await _ebayService.FetchItemsAsync(sellerQueries);
-
-                    List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync<AuctionItem>(_config.googledrive.sheets.ebay, sheetName, AuctionItemUtil.ToAuctionItem);
-
-                    var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
-
-                    var combinedItems = AuctionItemUtil.UnifyAndFilter(newItems, oldItems, filterWords, centralZone);
-
-                    try
-                    {
-                        await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
-                        await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                        await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                        await _sheetService.WriteItemsAsync(
-                            _config.googledrive.sheets.ebay,
-                            sheetName,
-                            combinedItems,
-                            ai => ai.ToRow(),
-                            combinedItems.First().GetHeaderRow()
-                        );
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to persist items for run {RunName} and seller {Seller}", run.sheet, seller);
-                        return Problem($"Failed to persist items for run '{run.sheet}' and seller '{seller}'.");
-                    }
-
-                    results.Add(new RunResult(sheetName, combinedItems.Count));
-                }
-            }
-
-            return Ok(results);
-        }
-
-
-
-        [HttpPost("WriteMarks100AuctionsToTable")]
-        public async Task<IActionResult> WriteMarks100AuctionsToTable()
-        {
-            var centralZone = DateTimeUtil.FindCentralTimeZone();
-            var results = new List<RunResult>();
-
-            foreach (var seller in _config.config.sellers)
-            {
-                _logger.LogInformation("Processing seller: {Seller}", seller);
-
-                List<RunConfig> runs = new List<RunConfig>();
-
-                var sheetName = $"100 - {seller}";
-
-                List<AuctionItem> oldItems = await _sheetService.GetAllRowsAsync<AuctionItem>(_config.googledrive.sheets.ebay, sheetName, AuctionItemUtil.ToAuctionItem);
-                List<AuctionItem> newItems = new List<AuctionItem>();
-
-                // 1.) Get all level 5 brands from basketball and football for this seller
-                List<string> queries = new List<string>();
-                var topTierBasketballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Brands", BrandUtil.ToBrand);
-                queries.AddRange(topTierBasketballBrands.Where(b => b.Value == 5)
-                    .Select(q => $"(basketball) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                var topTierFootballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Brands", BrandUtil.ToBrand);
-                queries.AddRange(topTierFootballBrands.Where(b => b.Value == 5)
-                    .Select(q => $"(football) ({q.Manufacturer} {q.Name})".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}")
-                    .Select(query => QueryUtil.InjectSeller(query, seller))
-                    .ToList());
-
-                // 2.) Get all PSA from basketball and football for this seller
-                queries.AddRange(new List<string> { QueryUtil.InjectSeller($"basketball card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card PSA".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
-
-                //Add GOATs
-                //Add case hits once they are finished being reviewed
-
-                runs.Add(new RunConfig() { sheet = $"100 - {seller}", queries = queries.ToArray() });
-
-                // 3.) Get all numbered cards from basketball and football for this seller
-                runs.Add(new RunConfig() { sheet = $"Numbered - {seller}", queries = (new List<string> { QueryUtil.InjectSeller($"basketball card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card /".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) }).ToArray() });
-
-
-                foreach (var run in runs)
-                {
-                    _logger.LogInformation("Processing run: {RunName} for seller: {Seller}", run.sheet, seller);
-
-                    if (run.sheet.Contains("Numbered"))
-                    {
-                        var tempNewItems = await _ebayService.FetchItemsAsync(run.queries);
-                        var newAuctionItems = tempNewItems
-                            .Select(item => AuctionItem.FromItemSummary(item, centralZone))
-                            .ToList();
-
-                        // 7.) Get all /40 or less from basketball and football for this seller
-                        var items40OrLess = newAuctionItems.Where(x => Int32.Parse(x.OutOf) <= 40).ToList();
-                        newItems.AddRange(items40OrLess);
-
-                        // 8.) Get all rookies, patches, or autos from basketball and football for this seller
-                        var itemsRPAs = newAuctionItems.Where(x => (x.Auto.ToLower() == "yes") && (x.Rookie.ToLower() == "yes") && (x.Patch.ToLower() == "yes")).ToList();
-                        newItems.AddRange(itemsRPAs);
-                    }
-                    else
-                    {
-                        var tempNewItems = await _ebayService.FetchItemsAsync(run.queries);
-                        newItems.AddRange(tempNewItems
-                            .Select(item => AuctionItem.FromItemSummary(item, centralZone))
-                            .ToList());
-                    }
-                }
-
-                var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
-                var combinedItems = AuctionItemUtil.UnifyAndFilter(newItems, oldItems, filterWords, centralZone);
-
-                try
-                {
-                    await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, sheetName, combinedItems.First().GetHeaderRow());
-                    await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                    await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                    await _sheetService.WriteItemsAsync(
-                        _config.googledrive.sheets.ebay,
-                        sheetName,
-                        combinedItems,
-                        ai => ai.ToRow(),
-                        combinedItems.First().GetHeaderRow()
-                    );
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to persist items for run {RunName} and seller {Seller}", "100", seller);
-                    return Problem($"Failed to persist items for run 100 and seller '{seller}'.");
-                }
-
-                results.Add(new RunResult(sheetName, combinedItems.Count));
-            }
-
-            return Ok(results);
-        }
-
-
-
-
-
-
-
-
         [HttpPost("WriteActiveAuctionsToTable")]
         public async Task<IActionResult> WriteActiveAuctionsToTable()
         {
@@ -644,17 +55,14 @@ namespace eBay_API.Controllers
                 _logger.LogInformation("Processing seller: {Seller}", seller);
 
                 // Get all football and basketball cards
-                var rawEbayItems = await _ebayService.FetchItemsAsync(new List<string> { QueryUtil.InjectSeller($"basketball card".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card".Trim() + "&limit=200&filter=price:[..10],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
+                var rawEbayItems = await _ebayService.FetchItemsAsync(new List<string> { QueryUtil.InjectSeller($"basketball card".Trim() + "&limit=200&filter=price:[..2],priceCurrency:USD,buyingOptions:{AUCTION}", seller), QueryUtil.InjectSeller($"football card".Trim() + "&limit=200&filter=price:[..2],priceCurrency:USD,buyingOptions:{AUCTION}", seller) });
 
                 var filterWords = (IEnumerable<string>)(_config.config.filterwords ?? Array.Empty<string>());
 
                 var filteredEbayItems = AuctionItemUtil.UnifyAndFilter(rawEbayItems, new List<AuctionItem>(), filterWords, centralZone);
+                List<AuctionItem> selectedItems = new List<AuctionItem>();
 
 
-                Console.WriteLine($"{seller} 0 - All Items: {filteredEbayItems.Count}");
-
-
-                // Write, and Remove each matching row
                 // 1.) Get all value 5 brands from basketball and football for this seller
                 List<Brand> value5Brands = new List<Brand>();
                 value5Brands.AddRange((await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Sets", BrandUtil.ToBrand)).Where(x => x.Value == 5));
@@ -663,7 +71,7 @@ namespace eBay_API.Controllers
                 var value5BrandItems = filteredEbayItems.Where(item => value5Brands.Any(brand => item.Title.Contains(brand.Name, StringComparison.OrdinalIgnoreCase))).ToList();
 
                 // Write these items to google drive
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "1 - Value 5 Brands", value5BrandItems.First().GetHeaderRow());
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "1 - Value 5 Brands", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "1 - Value 5 Brands");
                 await _sheetService.WriteItemsAsync(
@@ -671,19 +79,19 @@ namespace eBay_API.Controllers
                     "1 - Value 5 Brands",
                     value5BrandItems,
                     ai => ai.ToRow(),
-                    value5BrandItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
                 );
 
                 // Remove these items from filteredEbayItems
+                selectedItems.AddRange(value5BrandItems);
                 filteredEbayItems = filteredEbayItems.Except(value5BrandItems).ToList();
-                Console.WriteLine($"{seller} 1 - Level 5 Brands: {value5BrandItems.Count}");
 
 
                 // 2.) Get all PSA from basketball and football for this seller
                 var gradedItems = filteredEbayItems.Where(item => value5Brands.Any(brand => item.Title.Contains("PSA", StringComparison.OrdinalIgnoreCase) || item.Title.Contains("BGS", StringComparison.OrdinalIgnoreCase))).ToList();
 
                 // Write these items to google drive
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "2 - Graded", gradedItems.First().GetHeaderRow());
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "2 - Graded", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
                 await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "2 - Graded");
                 await _sheetService.WriteItemsAsync(
@@ -691,210 +99,218 @@ namespace eBay_API.Controllers
                     "2 - Graded",
                     gradedItems,
                     ai => ai.ToRow(),
-                    gradedItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
                 );
 
                 // Remove these items from filteredEbayItems
+                selectedItems.AddRange(gradedItems);
                 filteredEbayItems = filteredEbayItems.Except(gradedItems).ToList();
-                Console.WriteLine($"{seller} 2 - Graded: {gradedItems.Count}");
 
 
-                // 3.) Get all case hits from basketball and football for this seller
+                // 3.) Get all /40 or less from basketball and football for this seller
+                var lowerThan40Items = filteredEbayItems.Where(x => Int32.Parse(x.OutOf) <= 40).ToList();
+
+                // Write these items to google drive
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "3 - Numbered <=40", (new AuctionItem()).GetHeaderRow());
+                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "3 - Numbered <=40");
+                await _sheetService.WriteItemsAsync(
+                    _config.googledrive.sheets.ebay,
+                    "3 - Numbered <=40",
+                    lowerThan40Items,
+                    ai => ai.ToRow(),
+                    (new AuctionItem()).GetHeaderRow()
+                );
+
+                // Remove these items from filteredEbayItems
+                selectedItems.AddRange(lowerThan40Items);
+                filteredEbayItems = filteredEbayItems.Except(lowerThan40Items).ToList();
+
+
+                // 4.) Get all rookies, patches, or autos from basketball and football for this seller
+                var rpaItems = filteredEbayItems.Where(x => (x.Auto.ToLower() == "yes") && (x.Rookie.ToLower() == "yes") && (x.Patch.ToLower() == "yes")).ToList();
+
+                // Write these items to google drive
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "4 - RPAs", (new AuctionItem()).GetHeaderRow());
+                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "4 - RPAs");
+                await _sheetService.WriteItemsAsync(
+                    _config.googledrive.sheets.ebay,
+                    "4 - RPAs",
+                    rpaItems,
+                    ai => ai.ToRow(),
+                    (new AuctionItem()).GetHeaderRow()
+                );
+
+                // Remove these items from filteredEbayItems
+                selectedItems.AddRange(rpaItems);
+                filteredEbayItems = filteredEbayItems.Except(rpaItems).ToList();
+
+
+                // 5.) Get all case hits from basketball and football for this seller
                 List<CaseHit> caseHits = new List<CaseHit>();
-                caseHits.AddRange(await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit));
-                caseHits.AddRange(await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit));
+                caseHits.AddRange((await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.football, "Case Hits", CaseHitUtil.ToCaseHit)).Where(x => x.Value >= 8));
+                caseHits.AddRange((await _sheetService.GetAllRowsAsync<CaseHit>(_config.googledrive.sheets.basketball, "Case Hits", CaseHitUtil.ToCaseHit)).Where(x => x.Value >= 8));
 
                 var caseHitItems = filteredEbayItems.Where(item => caseHits.Any(caseHit => item.Title.Contains(caseHit.Name, StringComparison.OrdinalIgnoreCase))).ToList();
 
                 // Write these items to google drive
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "3 - Case Hits", caseHitItems.First().GetHeaderRow());
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "5 - Case Hits", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "3 - Case Hits");
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "5 - Case Hits");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
-                    "3 - Case Hits",
+                    "5 - Case Hits",
                     caseHitItems,
                     ai => ai.ToRow(),
-                    caseHitItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
                 );
 
                 // Remove these items from filteredEbayItems
+                selectedItems.AddRange(caseHitItems);
                 filteredEbayItems = filteredEbayItems.Except(caseHitItems).ToList();
-                Console.WriteLine($"{seller} 3 - Case Hits: {caseHitItems.Count}");
 
 
-                // 4.) Get all GOATS from basketball and football for this seller
+                // 6.) Get all GOATS from basketball and football for this seller
                 List<Player> goats = new List<Player>();
-                goats.AddRange(await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer));
-                goats.AddRange(await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer));
+                goats.AddRange((await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer)).Where(x => x.CollectionArea.ToLower() == "goats"));
+                goats.AddRange((await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer)).Where(x => x.CollectionArea.ToLower() == "goats"));
 
                 var goatItems = filteredEbayItems.Where(item => goats.Any(goats => item.Title.Contains(goats.Name, StringComparison.OrdinalIgnoreCase))).ToList();
 
                 // Write these items to google drive
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "4 - GOATS", goatItems.First().GetHeaderRow());
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "6 - GOATS", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "4 - GOATS");
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "6 - GOATS");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
-                    "4 - GOATS",
+                    "6 - GOATS",
                     goatItems,
                     ai => ai.ToRow(),
-                    goatItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
                 );
 
                 // Remove these items from filteredEbayItems
+                selectedItems.AddRange(goatItems);
                 filteredEbayItems = filteredEbayItems.Except(goatItems).ToList();
-                Console.WriteLine($"{seller} 4 - GOATS: {goatItems.Count}");
 
 
-                //5.) Get all PC from basketball and football for this seller
+                // 7.) Get all PC from basketball and football for this seller
                 List<Player> pc = new List<Player>();
-                pc.AddRange(await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer));
-                pc.AddRange(await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer));
+                pc.AddRange((await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer)).Where(x => x.CollectionArea.ToLower() == "pc"));
+                pc.AddRange((await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer)).Where(x => x.CollectionArea.ToLower() == "pc"));
 
-                //TODO: Need to remove all unneeded players from the file to get just PC
-
-                var pcItems = filteredEbayItems.Where(item => goats.Any(pc => item.Title.Contains(pc.Name, StringComparison.OrdinalIgnoreCase))).ToList();
+                var pcItems = filteredEbayItems.Where(item => pc.Any(pc => item.Title.Contains(pc.Name, StringComparison.OrdinalIgnoreCase))).ToList();
 
                 // Write these items to google drive
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "5 - PC", pcItems.First().GetHeaderRow());
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "7 - PC", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "5 - PC");
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "7 - PC");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
-                    "5 - PC",
+                    "7 - PC",
                     pcItems,
                     ai => ai.ToRow(),
-                    pcItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
                 );
 
                 // Remove these items from filteredEbayItems
+                selectedItems.AddRange(pcItems);
                 filteredEbayItems = filteredEbayItems.Except(pcItems).ToList();
-                Console.WriteLine($"{seller} 5 - PC: {pcItems.Count}");
 
 
-                // 6.) Get all numbered stars from basketball and football for this seller
+                // 8.) Get all stars from basketball and football for this seller
                 List<Player> stars = new List<Player>();
-                stars.AddRange(await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer));
-                stars.AddRange(await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer));
-
-                //TODO: Need to get only the stars (not the goats/pc)
+                stars.AddRange((await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.football, "Players", PlayerUtil.ToPlayer)).Where(x => x.CollectionArea.ToLower() == "stars"));
+                stars.AddRange((await _sheetService.GetAllRowsAsync<Player>(_config.googledrive.sheets.basketball, "Players", PlayerUtil.ToPlayer)).Where(x => x.CollectionArea.ToLower() == "stars"));
 
                 var starItems = filteredEbayItems.Where(item => stars.Any(pc => item.Title.Contains(pc.Name, StringComparison.OrdinalIgnoreCase))).ToList();
 
                 // Write these items to google drive
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "6 - Stars", starItems.First().GetHeaderRow());
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "8 - Stars", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "6 - Stars");
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "8 - Stars");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
-                    "6 - Stars",
+                    "8 - Stars",
                     starItems,
                     ai => ai.ToRow(),
-                    starItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
                 );
 
                 // Remove these items from filteredEbayItems
+                selectedItems.AddRange(starItems);
                 filteredEbayItems = filteredEbayItems.Except(starItems).ToList();
-                Console.WriteLine($"{seller} 6 - Stars: {starItems.Count}");
-
-
-                // 7.) Get all /40 or less from basketball and football for this seller
-                var lowerThan40Items = filteredEbayItems.Where(x => Int32.Parse(x.OutOf) <= 40).ToList();
-
-                // Write these items to google drive
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "7 - Numbered <=40", lowerThan40Items.First().GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "7 - Numbered <=40");
-                var items40OrLess = lowerThan40Items.Where(x => Int32.Parse(x.OutOf) <= 40).ToList();
-                await _sheetService.WriteItemsAsync(
-                    _config.googledrive.sheets.ebay,
-                    "7 - Numbered <=40",
-                    items40OrLess,
-                    ai => ai.ToRow(),
-                    lowerThan40Items.First().GetHeaderRow()
-                );
-
-                // Remove these items from filteredEbayItems
-                filteredEbayItems = filteredEbayItems.Except(lowerThan40Items).ToList();
-                Console.WriteLine($"{seller} 7 - Numbered <=40: {lowerThan40Items.Count}");
-
-
-
-
-
-
-
-                // 8.) Get all rookies, patches, or autos from basketball and football for this seller
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"8 - RPAs - {seller}", combinedItems.First().GetHeaderRow());
-                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                var itemsRPAs = combinedItems.Where(x => (x.Auto.ToLower() == "yes") && (x.Rookie.ToLower() == "yes") && (x.Patch.ToLower() == "yes")).ToList();
-                await _sheetService.WriteItemsAsync(
-                    _config.googledrive.sheets.ebay,
-                    $"8 - RPAs - {seller}",
-                    itemsRPAs,
-                    ai => ai.ToRow(),
-                    combinedItems.First().GetHeaderRow()
-                );
 
 
                 // 9.) Get all level 4 brands from basketball and football for this seller
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"9 - Mid-High Tier Brands - {seller}", combinedItems.First().GetHeaderRow());
+                List<Brand> value4Brands = new List<Brand>();
+                value4Brands.AddRange((await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Sets", BrandUtil.ToBrand)).Where(x => x.Value == 4));
+                value4Brands.AddRange((await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Sets", BrandUtil.ToBrand)).Where(x => x.Value == 4));
+
+                var value4BrandItems = filteredEbayItems.Where(item => value4Brands.Any(brand => item.Title.Contains(brand.Name, StringComparison.OrdinalIgnoreCase))).ToList().Where(x => Int32.Parse(x.OutOf) <= 1000).ToList();
+
+                // Write these items to google drive
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "9 - Value 4 Brands", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                var itemsLevel4 = new List<AuctionItem>();
-
-                List<string> level4Brands = new List<string>();
-                var midTopTierBasketballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Brands", BrandUtil.ToBrand);
-                level4Brands.AddRange(midTopTierBasketballBrands.Where(b => b.Value == 4).Select(a => a.Name).ToList());
-
-                var midTopTierFootballBrands = await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Brands", BrandUtil.ToBrand);
-                level4Brands.AddRange(midTopTierFootballBrands.Where(b => b.Value == 4).Select(a => a.Name).ToList());
-
-                itemsLevel4.AddRange(combinedItems.Where(item => level4Brands.Distinct().Any(brand => item.Title.Contains(brand, StringComparison.OrdinalIgnoreCase))).ToList());
-
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "9 - Value 4 Brands");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
-                    $"9 - Mid-High Tier Brands - {seller}",
-                    itemsLevel4,
+                    "9 - Value 4 Brands",
+                    value4BrandItems,
                     ai => ai.ToRow(),
-                    combinedItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
                 );
+
+                // Remove these items from filteredEbayItems
+                selectedItems.AddRange(value4BrandItems);
+                filteredEbayItems = filteredEbayItems.Except(value4BrandItems).ToList();
 
 
                 // 10.) Get all /100 or less from basketball and football for this seller
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"10 - Numbered <= 100 - {seller}", combinedItems.First().GetHeaderRow());
+                var lowerThan100Items = filteredEbayItems.Where(x => Int32.Parse(x.OutOf) <= 100).ToList();
+
+                // Write these items to google drive
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "10 - Numbered <=100", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
-                var items100OrLess = combinedItems.Where(x => (Int32.Parse(x.OutOf) > 40) && (Int32.Parse(x.OutOf) <= 100)).ToList();
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "10 - Numbered <=100");
                 await _sheetService.WriteItemsAsync(
                     _config.googledrive.sheets.ebay,
-                    $"10 - Numbered <= 100 - {seller}",
-                    items100OrLess,
+                    "10 - Numbered <=100",
+                    lowerThan100Items,
                     ai => ai.ToRow(),
-                    combinedItems.First().GetHeaderRow()
+                    (new AuctionItem()).GetHeaderRow()
+                );
+
+                // Remove these items from filteredEbayItems
+                selectedItems.AddRange(lowerThan100Items);
+                filteredEbayItems = filteredEbayItems.Except(lowerThan100Items).ToList();
+
+
+                // 11.) Get all remaining cards
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "11 - Remaining", (new AuctionItem()).GetHeaderRow());
+                await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "11 - Remaining");
+                await _sheetService.WriteItemsAsync(
+                    _config.googledrive.sheets.ebay,
+                    "11 - Remaining",
+                    filteredEbayItems,
+                    ai => ai.ToRow(),
+                    (new AuctionItem()).GetHeaderRow()
                 );
 
 
-                // 11.) Get all remaining numbered cards over 100 from basketball and football for this seller
-                var remainingItems = combinedItems.Except(items40OrLess).Except(itemsRPAs).Except(itemsLevel4).Except(items100OrLess).ToList();
-                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, $"11 - Numbered > 100 - {seller}", combinedItems.First().GetHeaderRow());
+                // 12.) Get all selected cards
+                await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "12 - Selected", (new AuctionItem()).GetHeaderRow());
                 await _sheetService.ClearAllFiltersAsync(_config.googledrive.sheets.ebay);
-                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, sheetName);
+                await _sheetService.DeleteAllRowsExceptHeaderAsync(_config.googledrive.sheets.ebay, "12 - Selected");
                 await _sheetService.WriteItemsAsync(
-                   _config.googledrive.sheets.ebay,
-                   $"11 - Numbered > 100 - {seller}",
-                   remainingItems,
-                   ai => ai.ToRow(),
-                   combinedItems.First().GetHeaderRow()
-               );
-
-
-                //IDEAS:
-                //Figure out a way to get my set collection into this mix
-                //Add a way to look for old cards (pre 1980)
-                //Get a way to look for specific Rookie cards
+                    _config.googledrive.sheets.ebay,
+                    "12 - Selected",
+                    selectedItems,
+                    ai => ai.ToRow(),
+                    (new AuctionItem()).GetHeaderRow()
+                );
             }
 
             return Ok(results);

@@ -81,7 +81,7 @@ public class GoogleDriveService
         var updateRequest = _sheetService.Spreadsheets.Values.Update(new ValueRange { Values = values }, spreadsheetId, $"{sheetName}!A1");
         updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
         await updateRequest.ExecuteAsync();
-        Console.WriteLine($"Combined data written to Google Sheet: {sheetName}");
+        Console.WriteLine($"{sheetName}: {allItems.Count}");
     }
 
 
