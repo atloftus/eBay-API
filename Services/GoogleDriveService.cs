@@ -347,8 +347,7 @@ public class GoogleDriveService
 
     public async Task<IList<Sheet>> GetAllSheets(string spreadsheetId) 
     {
-        var ss = await _sheetService.Spreadsheets.Get(spreadsheetId).ExecuteAsync().ConfigureAwait(false);
-        return ss.Sheets;
+        return (await _sheetService.Spreadsheets.Get(spreadsheetId).ExecuteAsync().ConfigureAwait(false)).Sheets;
     }
     #endregion
 }

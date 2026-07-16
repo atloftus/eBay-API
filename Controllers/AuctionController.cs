@@ -49,9 +49,6 @@ namespace eBay_API.Controllers
         [HttpPost("WriteActiveSportsAuctionsToTable")]
         public async Task<IActionResult> WriteActiveSportsAuctionsToTable()
         {
-            //TODO: Add Upper Deck Ulitmate collection 
-            //TODO: Need to remove all out of cycle items... (Ie only get the last M-F items)..... (figure out the streat of the week)
-
             var centralZone = DateTimeUtil.FindCentralTimeZone();
             var results = new List<RunResult>();
 
@@ -75,8 +72,6 @@ namespace eBay_API.Controllers
                 List<Brand> value5Brands = new List<Brand>();
                 value5Brands.AddRange((await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.football, "Sets", BrandUtil.ToBrand)).Where(x => x.Value == 5));
                 value5Brands.AddRange((await _sheetService.GetAllRowsAsync<Brand>(_config.googledrive.sheets.basketball, "Sets", BrandUtil.ToBrand)).Where(x => x.Value == 5));
-
-                //TODO: Add code here that write all the shit that doesnt make it here so I can make sure everything is good
 
                 var value5BrandItems = filteredEbayItems.Where(item => value5Brands.Any(brand => item.Title.Contains(brand.Name, StringComparison.OrdinalIgnoreCase))).ToList();
 
@@ -379,18 +374,14 @@ namespace eBay_API.Controllers
 
 
 
-
-
-                //TODO: Figure out a way to get a list of all the cards that I need in my pokemon sheet and tell if I need this card
-                var sheets = (await _sheetService.GetAllSheets(_config.googledrive.sheets.pokemon)).Where(x => x.Properties.Title.ToLower() != "overview");
-
-                //TODO: For each sheet not named Overview create a list of sets and pokemon that I have in my collection
                 List<PokemonSet> pokemonSets = new List<PokemonSet>();
+                var sheets = (await _sheetService.GetAllSheets(_config.googledrive.sheets.pokemon)).Where(x => x.Properties.Title.ToLower() != "overview");
+                
                 foreach (var sheet in sheets)
                 {
-                    //TODO: Get all rows for this sheet
                     var newSet = new PokemonSet(sheet);
-                    //TODO: How do I fix this
+
+                    //TODO: Get all rows for this sheet
                     //var rows = await _sheetService.GetAllRowsAsync<PokemonCard>(_config.googledrive.sheets.pokemon, sheet.Properties.Title, PokemonCardUtil.ToPokemonCard(newSet));
 
                 }
