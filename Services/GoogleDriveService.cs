@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.RegularExpressions;
 using eBay_API.Models.Config;
 using Google.Apis.Auth.OAuth2;
@@ -341,6 +342,13 @@ public class GoogleDriveService
         };
 
         await _sheetService.Spreadsheets.BatchUpdate(batchRequest, spreadsheetId).ExecuteAsync();
+    }
+
+
+    public async Task<IList<Sheet>> GetAllSheets(string spreadsheetId) 
+    {
+        var ss = await _sheetService.Spreadsheets.Get(spreadsheetId).ExecuteAsync().ConfigureAwait(false);
+        return ss.Sheets;
     }
     #endregion
 }

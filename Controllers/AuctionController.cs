@@ -382,9 +382,18 @@ namespace eBay_API.Controllers
 
 
                 //TODO: Figure out a way to get a list of all the cards that I need in my pokemon sheet and tell if I need this card
-                //TODO: Connect to my pokemon sheet
-                //TODO: Parse out all cards that I need
-                //TODO: Need to add a column for if I have the card or not
+                var sheets = (await _sheetService.GetAllSheets(_config.googledrive.sheets.pokemon)).Where(x => x.Properties.Title.ToLower() != "overview");
+
+                //TODO: For each sheet not named Overview create a list of sets and pokemon that I have in my collection
+                List<PokemonSet> pokemonSets = new List<PokemonSet>();
+                foreach (var sheet in sheets)
+                {
+                    //TODO: Get all rows for this sheet
+                    var newSet = new PokemonSet(sheet);
+                    //TODO: How do I fix this
+                    //var rows = await _sheetService.GetAllRowsAsync<PokemonCard>(_config.googledrive.sheets.pokemon, sheet.Properties.Title, PokemonCardUtil.ToPokemonCard(newSet));
+
+                }
 
 
                 // Write these items to google drive
