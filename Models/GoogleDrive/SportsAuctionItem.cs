@@ -5,7 +5,7 @@ using eBay_API.Models.eBay.Response;
 
 namespace eBay_API.Models.GoogleDrive
 {
-    public class AuctionItem : TableRow
+    public class SportsAuctionItem : TableRow
     {
         #region PROPERTIES
         [ColumnOrder(1)]
@@ -69,12 +69,12 @@ namespace eBay_API.Models.GoogleDrive
         /// <param name="item">The ItemSummary to convert.</param>
         /// <param name="centralZone">Time zone for date conversion.</param>
         /// <returns>A new AuctionItem instance.</returns>
-        public static AuctionItem FromItemSummary(ItemSummary item, TimeZoneInfo centralZone)
+        public static SportsAuctionItem FromItemSummary(ItemSummary item, TimeZoneInfo centralZone)
         {
             DateTime centralEndDate = TimeZoneInfo.ConvertTimeFromUtc(item.ItemEndDate, centralZone);
             DateTime centralStartDate = TimeZoneInfo.ConvertTimeFromUtc(item.ItemCreationDate, centralZone);
 
-            return new AuctionItem
+            return new SportsAuctionItem
             {
                 Title = AuctionItemUtil.ParseTitle(item.Title),
                 Year = AuctionItemUtil.ParseCardYear(item.Title),
