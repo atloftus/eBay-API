@@ -2,13 +2,11 @@ using eBay_API.Models.eBay.Response;
 using eBay_API.Models.GoogleDrive;
 using System.Text.RegularExpressions;
 
-
 public static class AuctionItemUtil
 {
     #region METHODS
     public static List<SportsAuctionItem> UnifyAndFilter(List<ItemSummary> newItems, List<SportsAuctionItem> oldItems, IEnumerable<string> filterWords, TimeZoneInfo centralZone)
     {
-        // Convert new items to AuctionItem
         var newAuctionItems = newItems
             .Select(item => SportsAuctionItem.FromItemSummary(item, centralZone))
             .ToList();
@@ -16,21 +14,17 @@ public static class AuctionItemUtil
         return UnifyAndFilter(newAuctionItems, oldItems, filterWords, centralZone);
     }
 
-
     public static List<SportsAuctionItem> UnifyAndFilter(List<SportsAuctionItem> newItems, List<SportsAuctionItem> oldItems, IEnumerable<string> filterWords, TimeZoneInfo centralZone)
     {
-        // Combine new and old auction items
         var allAuctionItems = oldItems
             .Concat(newItems)
             .ToList();
 
-        // Filter by title words (case-insensitive)
         allAuctionItems = allAuctionItems
             .Where(item => !string.IsNullOrWhiteSpace(item.Title) &&
                            !filterWords.Any(word => item.Title!.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0))
             .ToList();
 
-        // Filter out Topps or Finest from 2016-2026
         allAuctionItems = allAuctionItems
             .Where(item =>
             {
@@ -49,7 +43,6 @@ public static class AuctionItemUtil
             })
             .ToList();
 
-        // Filter out Bowman cards before 2020
         allAuctionItems = allAuctionItems
             .Where(item =>
             {
@@ -68,51 +61,39 @@ public static class AuctionItemUtil
             })
             .ToList();
 
-
-        // Remove Panini/Pannini unlicensed products from 2025 onward
         allAuctionItems = allAuctionItems
             .Where(item =>
             {
                 if (string.IsNullOrWhiteSpace(item.Title)) return true;
                 var titleLower = item.Title.ToLowerInvariant();
-
-                // match common spellings of Panini
                 bool isPanini = titleLower.Contains("panini");
-
-                // match obvious "unlicensed" indicators - extendable if needed
                 bool isUnlicensed = titleLower.Contains("unlicensed") ||
                                     titleLower.Contains("no license") ||
                                     titleLower.Contains("not licensed");
 
-                // Only exclude when both panini and unlicensed indicators are present and year >= 2025
                 if (!isPanini || !isUnlicensed)
                     return true;
 
                 if (int.TryParse(item.Year, out int year))
                 {
                     if (year >= 2025)
-                        return false; // filter out
+                        return false;
                 }
 
                 return true;
             })
             .ToList();
 
-
-        // Remove duplicates by ItemWebUrl, keep item with higher BidCount
         allAuctionItems = allAuctionItems
             .GroupBy(item => item.ItemWebUrl, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(i => int.TryParse(i.BidCount, out var bc) ? bc : 0).First())
             .ToList();
 
-        // Remove duplicates by Title, keep item with higher BidCount
         allAuctionItems = allAuctionItems
             .GroupBy(item => item.Title?.Trim().ToLowerInvariant() ?? string.Empty)
             .Select(g => g.OrderByDescending(i => int.TryParse(i.BidCount, out var bc) ? bc : 0).First())
             .ToList();
 
-
-        // Remove expired items
         allAuctionItems = allAuctionItems
             .Where(item =>
             {
@@ -120,7 +101,6 @@ public static class AuctionItemUtil
                 if (!string.IsNullOrWhiteSpace(item.EndDate) && !string.IsNullOrWhiteSpace(item.EndTime))
                 {
                     DateTime.TryParse($"{item.EndDate} {item.EndTime}", out endDate);
-                    // Assume endDate is in centralZone, convert to UTC
                     if (endDate != DateTime.MinValue)
                     {
                         endDate = TimeZoneInfo.ConvertTimeToUtc(endDate, centralZone);
@@ -130,8 +110,6 @@ public static class AuctionItemUtil
             })
             .ToList();
 
-
-        // Remove all items that have a bid count higher than 0
         allAuctionItems = allAuctionItems
             .Where(item => (int.TryParse(item.BidCount, out var bc) ? bc == 0 : true) && ((item.EndDateTime - item.StartDateTime) == TimeSpan.FromDays(5)))
             .ToList();
@@ -139,10 +117,8 @@ public static class AuctionItemUtil
         return allAuctionItems;
     }
 
-
     public static List<PokemonAuctionItem> UnifyAndFilter(List<ItemSummary> newItems, List<PokemonAuctionItem> oldItems, IEnumerable<string> filterWords, TimeZoneInfo centralZone)
     {
-        // Convert new items to AuctionItem
         var newAuctionItems = newItems
             .Select(item => PokemonAuctionItem.FromItemSummary(item, centralZone))
             .ToList();
@@ -150,34 +126,27 @@ public static class AuctionItemUtil
         return UnifyAndFilter(newAuctionItems, oldItems, filterWords, centralZone);
     }
 
-
     public static List<PokemonAuctionItem> UnifyAndFilter(List<PokemonAuctionItem> newItems, List<PokemonAuctionItem> oldItems, IEnumerable<string> filterWords, TimeZoneInfo centralZone)
     {
-        // Combine new and old auction items
         var allAuctionItems = oldItems
             .Concat(newItems)
             .ToList();
 
-        // Filter by title words (case-insensitive)
         allAuctionItems = allAuctionItems
             .Where(item => !string.IsNullOrWhiteSpace(item.Title) &&
                            !filterWords.Any(word => item.Title!.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0))
             .ToList();
 
-        // Remove duplicates by ItemWebUrl, keep item with higher BidCount
         allAuctionItems = allAuctionItems
             .GroupBy(item => item.ItemWebUrl, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(i => int.TryParse(i.BidCount, out var bc) ? bc : 0).First())
             .ToList();
 
-        // Remove duplicates by Title, keep item with higher BidCount
         allAuctionItems = allAuctionItems
             .GroupBy(item => item.Title?.Trim().ToLowerInvariant() ?? string.Empty)
             .Select(g => g.OrderByDescending(i => int.TryParse(i.BidCount, out var bc) ? bc : 0).First())
             .ToList();
 
-
-        // Remove expired items
         allAuctionItems = allAuctionItems
             .Where(item =>
             {
@@ -185,7 +154,6 @@ public static class AuctionItemUtil
                 if (!string.IsNullOrWhiteSpace(item.EndDate) && !string.IsNullOrWhiteSpace(item.EndTime))
                 {
                     DateTime.TryParse($"{item.EndDate} {item.EndTime}", out endDate);
-                    // Assume endDate is in centralZone, convert to UTC
                     if (endDate != DateTime.MinValue)
                     {
                         endDate = TimeZoneInfo.ConvertTimeToUtc(endDate, centralZone);
@@ -195,14 +163,8 @@ public static class AuctionItemUtil
             })
             .ToList();
 
-        //// Remove all items that have a bid count higher than 0
-        //allAuctionItems = allAuctionItems
-        //    .Where(item => (int.TryParse(item.BidCount, out var bc) ? bc == 0 : true) && ((item.EndDateTime - item.StartDateTime) == TimeSpan.FromDays(5)))
-        //    .ToList();
-
         return allAuctionItems;
     }
-
 
     public static SportsAuctionItem? ToAuctionItem(IList<object> row)
     {
@@ -226,10 +188,8 @@ public static class AuctionItemUtil
         };
     }
 
-
     public static string ParseTitle(string title) =>
     title?.Replace("\"", "\"\"") ?? "";
-
 
     public static string ParseCardYear(string title)
     {
@@ -238,7 +198,6 @@ public static class AuctionItemUtil
         if (yearMatch.Success) return yearMatch.Groups[1].Value;
         return "";
     }
-
 
     public static int ParseOutOf(string title)
     {
@@ -257,14 +216,12 @@ public static class AuctionItemUtil
         return 999999;
     }
 
-
     public static string ParsePSA(string title)
     {
         if (string.IsNullOrEmpty(title)) return "0";
         var psaMatch = Regex.Match(title, @"PSA (\d{1,2})");
         return psaMatch.Success ? psaMatch.Groups[1].Value : "0";
     }
-
 
     public static string ParseRC(string title)
     {
@@ -273,14 +230,12 @@ public static class AuctionItemUtil
         return (lower.Contains(" rc ") || lower.Contains(" rookie ")) ? "Yes" : "No";
     }
 
-
     public static string ParseAuto(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "No";
         var lower = title.ToLowerInvariant();
         return (lower.Contains(" auto ") || lower.Contains(" autograph ") || lower.Contains(" signatures ") || lower.Contains(" signings ")) ? "Yes" : "No";
     }
-
 
     public static string ParsePatch(string title)
     {
@@ -289,14 +244,12 @@ public static class AuctionItemUtil
         return (lower.Contains(" jersey ") || lower.Contains(" patch ") || lower.Contains(" materials ")) ? "Yes" : "No";
     }
 
-
     public static string ParseCaseHit(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "No";
         var lower = title.ToLowerInvariant();
         return (lower.Contains(" case hit ") || lower.Contains(" ssp ") || lower.Contains(" sp ")) ? "Yes" : "No";
     }
-
 
     public static string FormatUrl(string url)
     {
@@ -305,7 +258,6 @@ public static class AuctionItemUtil
             return $"\"{url.Replace("\"", "\"\"")}\"";
         return url;
     }
-
 
     public static string NormalizeToken(string s)
     {
@@ -316,7 +268,6 @@ public static class AuctionItemUtil
             .ToArray();
         return new string(arr);
     }
-
 
     public static string? ParseName(string title, IEnumerable<string>? pokemonList)
     {
@@ -336,23 +287,19 @@ public static class AuctionItemUtil
         return "trainer";
     }
 
-
     public static string ParseSet(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
 
-        // prefer bracketed or parenthesized tokens (common in listings)
         var bracketMatches = Regex.Matches(title, @"[\[\(]([^()\[\]]{1,60})[\]\)]");
         foreach (Match m in bracketMatches)
         {
             var token = m.Groups[1].Value.Trim();
-            // ignore tokens that are just years or card numbers
             if (Regex.IsMatch(token, @"^\d{4}$")) continue;
             if (Regex.IsMatch(token, @"^\d{1,4}/\d{1,4}$")) continue;
             if (token.Length >= 2) return token;
         }
 
-        // fallback: try to match common set words sequences (conservative)
         var setPattern = @"\b(Base Set|Jungle|Fossil|Team Rocket|Neo(?: )?Genesis|EX|XY|Sun & Moon|Sword & Shield|Scarlet & Violet|Shining Fates|Hidden Fates|Evolutions|Promos|Celebrations)\b";
         var setMatch = Regex.Match(title, setPattern, RegexOptions.IgnoreCase);
         if (setMatch.Success) return setMatch.Value;
@@ -360,18 +307,14 @@ public static class AuctionItemUtil
         return "";
     }
 
-
     public static string ParseGeneration(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
 
-        // 1) explicit "Gen" or "Generation" mention
         var genMatch = Regex.Match(title, @"\bgen(?:eration)?\s*(\d{1,2})\b", RegexOptions.IgnoreCase);
         if (genMatch.Success && int.TryParse(genMatch.Groups[1].Value, out var explicitGen) && explicitGen >= 1 && explicitGen <= 10)
             return explicitGen.ToString();
 
-        // 2) year-based switch (primary logic). If the year sits on an overlap boundary,
-        //    use set token to disambiguate.
         var yearStr = AuctionItemUtil.ParseCardYear(title);
         if (!int.TryParse(yearStr, out var yr))
             return "";
@@ -382,8 +325,7 @@ public static class AuctionItemUtil
 
         switch (yr)
         {
-            // Generation 1: 1999–2000 (2000 overlaps with Gen 2 -> check set)
-            case int y when (y >= 1999 && y <= 2000):
+            case int y when (y >= 1997 && y <= 2000):
                 if (y == 2000)
                 {
                     if (setContains("neo")) return "2";
@@ -391,7 +333,6 @@ public static class AuctionItemUtil
                 }
                 return "1";
 
-            // Generation 2: 2000–2003 (2003 overlaps with Gen 3 -> check set)
             case int y when (y >= 2000 && y <= 2003):
                 if (y == 2003)
                 {
@@ -402,7 +343,6 @@ public static class AuctionItemUtil
                 }
                 return "2";
 
-            // Generation 3: 2003–2007 (2007 overlaps with Gen 4 -> check set)
             case int y when (y >= 2003 && y <= 2007):
                 if (y == 2007)
                 {
@@ -412,7 +352,6 @@ public static class AuctionItemUtil
                 }
                 return "3";
 
-            // Generation 4: 2007–2011 (2011 overlaps with Gen 5 -> check set)
             case int y when (y >= 2007 && y <= 2011):
                 if (y == 2011)
                 {
@@ -422,19 +361,15 @@ public static class AuctionItemUtil
                 }
                 return "4";
 
-            // Generation 5: 2011–2013
             case int y when (y >= 2011 && y <= 2013):
                 return "5";
 
-            // Generation 6: 2014–2016
             case int y when (y >= 2014 && y <= 2016):
                 return "6";
 
-            // Generation 7: 2017–2019
             case int y when (y >= 2017 && y <= 2019):
                 return "7";
 
-            // Generation 8: 2020–2023 (2023 overlaps with Gen 9 -> check set)
             case int y when (y >= 2020 && y <= 2023):
                 if (y == 2023)
                 {
@@ -444,7 +379,6 @@ public static class AuctionItemUtil
                 }
                 return "8";
 
-            // Generation 9: 2023–2025 (2025 overlaps with Gen 10 -> check set)
             case int y when (y >= 2023 && y <= 2025):
                 if (y == 2023)
                 {
@@ -459,7 +393,6 @@ public static class AuctionItemUtil
                 }
                 return "9";
 
-            // Generation 10: 2025–present
             default:
                 if (yr >= 2025) return "10";
                 break;
@@ -468,17 +401,15 @@ public static class AuctionItemUtil
         return "";
     }
 
-
     public static string ParseCardNumber(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
 
-        //TODO: be able to parse #50a /147 or #50a/147 as "50a"
-        var patterns = new[]    {
-                @"\b\d{1,4}/\d{1,4}\b",
-                @"#\d{1,4}\b",
-                @"\b[A-Z]{1,3}-\d{1,4}\b",
-                @"\b\d{1,4}\b"
+        var patterns = new[] {
+                @"#?\s*\d{1,4}[A-Za-z]?\s*/\s*\d{1,4}\b",
+                @"#\s*\d{1,4}[A-Za-z]?\b",
+                @"\b[A-Z]{1,4}-\d{1,4}[A-Za-z]?\b",
+                @"\b\d{1,4}[A-Za-z]?\b"
             };
 
         foreach (var p in patterns)
@@ -488,12 +419,18 @@ public static class AuctionItemUtil
 
             var val = m.Value.Trim();
 
-            if (val.StartsWith("#")) val = val.Substring(1);
+            if (val.StartsWith("#")) val = val.Substring(1).Trim();
 
             var slashIndex = val.IndexOf('/');
             if (slashIndex >= 0)
             {
-                val = val.Substring(0, slashIndex);
+                val = val.Substring(0, slashIndex).Trim();
+            }
+
+            var hyphenIndex = val.IndexOf('-');
+            if (hyphenIndex >= 0)
+            {
+                val = val.Substring(hyphenIndex + 1).Trim();
             }
 
             return val.Trim();
@@ -501,7 +438,6 @@ public static class AuctionItemUtil
 
         return "";
     }
-
 
     public static string ParseHoloType(string title)
     {
@@ -518,14 +454,174 @@ public static class AuctionItemUtil
 
 
 
-
-
-
-
-
-    //NNEW CODE
-    public static void HydratePokemonAuctionItems(PokemonAuctionItem item)
+    public static void HydratePokemonAuctionItems(PokemonAuctionItem item, IEnumerable<string>? pokemonList, IEnumerable<string>? pokemonSetList)
     {
+        var originalTitle = item.Title ?? string.Empty;
+        var title = originalTitle;
 
+        title.ToLower().Replace("gem mint", "").Replace("mint", "");
+
+        // 1.) Parse year
+        var yearVal = AuctionItemUtil.ParseCardYear(originalTitle);
+        item.Year = yearVal ?? "";
+        if (!string.IsNullOrEmpty(yearVal))
+        {
+            title = Regex.Replace(title, @"\b" + Regex.Escape(yearVal) + @"\b", " ", RegexOptions.IgnoreCase);
+        }
+
+
+        // 2.) Parse PSA/BGS/SGC/Beckett grade
+        var gradePattern = @"\b(?:(PSA|BGS|SGC|CGC|PCG|TAG)\s*[:#\-\s]?\s*(\d{1,2}(?:\.\d)?)|(\d{1,2}(?:\.\d)?)\s*(?:/)?\s*(PSA|BGS|SGC|Beckett))\b";
+        var gradeMatch = Regex.Match(title, gradePattern, RegexOptions.IgnoreCase);
+        if (gradeMatch.Success)
+        {
+            if (gradeMatch.Groups[1].Success)
+            {
+                item.PSA = gradeMatch.Groups[2].Value;
+            }
+            else
+            {
+                item.PSA = gradeMatch.Groups[3].Value;
+            }
+
+            title = Regex.Replace(title, Regex.Escape(gradeMatch.Value), " ", RegexOptions.IgnoreCase);
+        }
+
+
+        // Use pokemonSetList (if provided) to attempt to parse the set name first, then fall back to ParseSet
+        string parsedSet = "";
+        if (pokemonSetList != null)
+        {
+            var normTitle = NormalizeToken(title);
+            foreach (var setCandidate in pokemonSetList)
+            {
+                var normSet = NormalizeToken(setCandidate);
+                if (normSet.Length < 2) continue;
+                if (normTitle.Contains(normSet))
+                {
+                    parsedSet = setCandidate.Trim();
+                    title = Regex.Replace(title, Regex.Escape(parsedSet), " ", RegexOptions.IgnoreCase);
+                    break;
+                }
+            }
+
+
+            if (string.IsNullOrEmpty(parsedSet))
+            {
+                if (normTitle.Contains("unlimited")) parsedSet = "base set";
+                if (normTitle.Contains("shadowless")) parsedSet = "base set";
+                if (normTitle.Contains("pokemon1stedition")) parsedSet = "base set";
+                if (normTitle.Contains("pokemon2")) parsedSet = "base set 2";
+                if (normTitle.Contains("pokemonpop")) parsedSet = "pop series 1";
+                if (normTitle.Contains("expedition")) parsedSet = "expedition base set";
+                if (normTitle.Contains("exfireredleafgreen")) parsedSet = "ex firered and leafgreen";
+                if (normTitle.Contains("exteammagmavsaqua")) parsedSet = "ex team magma vs team aqua";
+                if (normTitle.Contains("exrubysapphire")) parsedSet = "ex ruby and sapphire";
+                if (normTitle.Contains("swshblackstarpromos")) parsedSet = "sword and shield promos";
+                if (normTitle.Contains("diamondpearlblackstar")) parsedSet = "diamond and pearl promos";
+                if (normTitle.Contains("mepblackstarpromos")) parsedSet = "mega evolution promos";
+                if (normTitle.Contains("xypromos")) parsedSet = "x and y black star promos";
+                if (normTitle.Contains("smblackstarpromos")) parsedSet = "sun and moon black star promos";
+                if (normTitle.Contains("diamondpearl")) parsedSet = "diamond and pearl";
+                if (normTitle.Contains("sunmoon")) parsedSet = "sun and moon";
+                if (normTitle.Contains("blackwhite")) parsedSet = "black and white";
+                if (normTitle.Contains("heartgoldandsoulsilver")) parsedSet = "heartgold and soulsilver";
+                if (normTitle.Contains("hgss")) parsedSet = "heartgold and soulsilver";
+                if (normTitle.Contains("sm")) parsedSet = "sun and moon";
+                if (normTitle.Contains("xy")) parsedSet = "x and y";
+                if (normTitle.Contains("sv")) parsedSet = "scarlet and violet";
+                if (normTitle.Contains("swsh")) parsedSet = "sword and shield";
+            }
+        }
+
+        item.Set = parsedSet ?? "";
+
+
+        // Parse name and remove from title to avoid duplication
+        var parsedName = AuctionItemUtil.ParseName(title, pokemonList);
+        item.Name = parsedName ?? string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(parsedName) && !string.Equals(parsedName, "trainer", StringComparison.OrdinalIgnoreCase))
+        {
+            // remove bracketed name tokens like [Pikachu] or (Pikachu)
+            title = Regex.Replace(title, @"[\[\(]\s*" + Regex.Escape(parsedName) + @"\s*[\]\)]", " ", RegexOptions.IgnoreCase);
+
+            // remove any remaining exact literal occurrences of the name
+            title = Regex.Replace(title, @"\b" + Regex.Escape(parsedName) + @"\b", " ", RegexOptions.IgnoreCase);
+        }
+
+
+        // Separate card number parsing from holo/variant parsing
+        string cardNumber = "";
+        string variantSuffix = "";
+
+        // Improved patterns to capture alpha prefixes + numbers and optional "/..." parts:
+        var cardPatterns = new[] {
+                // #TG23/TG30, TG23/TG30, #RC10/RC25, RC10/RC25
+                @"#?\s*[A-Za-z]{1,4}\d{1,4}[A-Za-z]?\s*/\s*[A-Za-z]{0,4}\d{1,4}[A-ZaZ]?\b",
+                // #SWSH234, #DP27, #TG23
+                @"#\s*[A-Za-z]{1,4}\d{1,4}[A-Za-z]?\b",
+                // Set-123 or ABC-123 (keep behavior to extract numeric part after hyphen when present)
+                @"\b[A-Za-z]{1,4}-\d{1,4}[A-Za-z]?\b",
+                // fallback digit-only patterns
+                @"\b\d{1,4}[A-Za-z]?\b"
+            };
+        Match? cardMatch = null;
+        foreach (var p in cardPatterns)
+        {
+            var m = Regex.Match(title, p, RegexOptions.IgnoreCase);
+            if (m.Success)
+            {
+                cardMatch = m;
+                break;
+            }
+        }
+        if (cardMatch != null)
+        {
+            var val = cardMatch.Value.Trim();
+
+            // Strip leading '#' and any immediate whitespace
+            val = Regex.Replace(val, @"^#\s*", "");
+
+            // If there's a slash, prefer the left side (before '/')
+            var slashIndex = val.IndexOf('/');
+            if (slashIndex >= 0)
+                val = val.Substring(0, slashIndex).Trim();
+
+            // If token uses a hyphen like "SET-123", preserve existing behavior: take the part after the hyphen
+            var hyphenIndex = val.IndexOf('-');
+            if (hyphenIndex >= 0)
+                val = val.Substring(hyphenIndex + 1).Trim();
+
+            cardNumber = val.Trim();
+
+            // remove matched card token from title
+            title = Regex.Replace(title, Regex.Escape(cardMatch.Value), " ", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
+        }
+
+        item.CardNumber = cardNumber ?? "";
+
+
+        // Holo detection - independent of card number logic
+        var holoPattern = @"\breverse[\s-]?holo\b|\breverse holo\b|\bholo(graphic|g)?\b|\bfoil\b";
+        var holo = AuctionItemUtil.ParseHoloType(title);
+        if (string.IsNullOrEmpty(holo)) holo = "";
+        item.HoloType = holo;
+
+        if (Regex.IsMatch(title, holoPattern, RegexOptions.IgnoreCase))
+        {
+            title = Regex.Replace(title, holoPattern, " ", RegexOptions.IgnoreCase);
+        }
+
+        // Variant detection (V, VMAX, EX, GX, etc.) - treat as separate step and allow it to override holo type where appropriate
+        var variantMatch = Regex.Match(title, @"\b(vmax|v-max|v|ex|e|gx|g)\b", RegexOptions.IgnoreCase);
+        if (variantMatch.Success)
+        {
+            item.HoloType = variantMatch.Value.Trim().ToUpper();
+
+            title = Regex.Replace(title, Regex.Escape(variantMatch.Value), " ", RegexOptions.IgnoreCase);
+        }
+
+        item.Generation = AuctionItemUtil.ParseGeneration(originalTitle);
     }
 }

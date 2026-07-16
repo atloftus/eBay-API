@@ -67,32 +67,22 @@ namespace eBay_API.Models.GoogleDrive
             DateTime centralEndDate = TimeZoneInfo.ConvertTimeFromUtc(item.ItemEndDate, centralZone);
             DateTime centralStartDate = TimeZoneInfo.ConvertTimeFromUtc(item.ItemCreationDate, centralZone);
 
-            string title = AuctionItemUtil.ParseTitle(item.Title);
-
-            //TODO: Need to add a column that has the set name
-            //TODO: Need to update how PokemonAuctionItems are parsed to go in order so its easier to parse info correctly
-
-
             var result = new PokemonAuctionItem
             {
-                Title = title,
-                Year = AuctionItemUtil.ParseCardYear(item.Title),
-                Generation = AuctionItemUtil.ParseGeneration(title),
-                CardNumber = AuctionItemUtil.ParseCardNumber(title),
+                Title = AuctionItemUtil.ParseTitle(item.Title),
                 Price = item.CurrentBidPrice?.Value ?? "",
                 BidCount = item.BidCount?.ToString() ?? "",
-                HoloType = AuctionItemUtil.ParseHoloType(title),
                 EndDate = centralEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 EndTime = centralEndDate.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
                 StartDateTime = centralStartDate,
                 EndDateTime = centralEndDate,
-                ItemWebUrl = AuctionItemUtil.FormatUrl(item.ItemWebUrl),
-                PSA = AuctionItemUtil.ParsePSA(item.Title),
-                Name = AuctionItemUtil.ParseName(title, pokemonList)
+                ItemWebUrl = AuctionItemUtil.FormatUrl(item.ItemWebUrl)
             };
 
+            AuctionItemUtil.HydratePokemonAuctionItems(result, pokemonList, pokemonSetList);
+
             return result;
-        }
+        } 
 
 
         public static PokemonAuctionItem FromItemSummary(ItemSummary item, TimeZoneInfo centralZone)
