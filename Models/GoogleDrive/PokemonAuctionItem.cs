@@ -41,7 +41,9 @@ namespace eBay_API.Models.GoogleDrive
 
         [ColumnOrder(11)]
         public string Price { get; set; } = "";
-                
+        [ColumnOrder(11)]
+        public bool? Have { get; set; } = null;
+
         [ColumnOrder(12)]
         public string ItemWebUrl
         {

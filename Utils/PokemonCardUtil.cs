@@ -6,14 +6,14 @@ namespace eBay_API.Utils
     public static class PokemonCardUtil
     {
         #region METHODS
-        public static PokemonCard? ToPokemonCard(IList<object> row, PokemonSet pokemonSet)
+        public static PokemonCard? ToPokemonCard(IList<object> row)
         {
             if (row == null || row.Count == 0) return null;
 
             static string GetCell(IList<object> r, int index) => index < r.Count ? (r[index]?.ToString() ?? string.Empty) : string.Empty;
 
-            string setNumber = GetCell(row, 0).Trim();
-            string name = GetCell(row, 1).Trim();
+            string setNumber = GetCell(row, 0).Trim().Split("/")[0];
+            string name = GetCell(row, 1).Trim().ToLower();
             string type = GetCell(row, 2).Trim();
 
             static int ParseIntCell(string s)
@@ -31,8 +31,7 @@ namespace eBay_API.Utils
 
             return new PokemonCard
             {
-                Set = pokemonSet,
-                SetNumber = setNumber,
+                CardNumber = setNumber,
                 Name = name,
                 Type = type,
                 QualityNormal = qualityNormal,

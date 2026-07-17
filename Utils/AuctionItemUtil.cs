@@ -495,6 +495,8 @@ public static class AuctionItemUtil
             var normTitle = NormalizeToken(title);
             foreach (var setCandidate in pokemonSetList)
             {
+                //TODO: Need to figure out how to handle case where its Team Rocket's XYZ vs Team Rocket set. Same thing with magama
+
                 var normSet = NormalizeToken(setCandidate);
                 if (normSet.Length < 2) continue;
                 if (normTitle.Contains(normSet))

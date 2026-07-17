@@ -54,7 +54,7 @@ namespace eBay_API.Controllers
 
             foreach (var seller in _config.config.sellers)
             {
-                _logger.LogInformation("Processing seller: {Seller}", seller);
+                Console.WriteLine("Processing seller: {Seller}", seller);
 
 
                 // Get all football and basketball cards
@@ -65,7 +65,7 @@ namespace eBay_API.Controllers
                 var filteredEbayItems = AuctionItemUtil.UnifyAndFilter(rawEbayItems, new List<SportsAuctionItem>(), filterWords, centralZone);
                 List<SportsAuctionItem> selectedItems = new List<SportsAuctionItem>();
 
-                _logger.LogInformation("Filtered Items: ", filteredEbayItems);
+                Console.WriteLine("Filtered Items: ", filteredEbayItems);
 
 
                 // 1.) Get all value 5 brands from basketball and football for this seller
@@ -346,7 +346,6 @@ namespace eBay_API.Controllers
         }
 
 
-
         [HttpPost("WriteActivePokemonAuctionsToTable")]
         public async Task<IActionResult> WriteActivePokemonAuctionsToTable()
         {
@@ -355,7 +354,23 @@ namespace eBay_API.Controllers
 
             foreach (var seller in _config.config.sellers)
             {
-                _logger.LogInformation("Processing seller: {Seller}", seller);
+                List<PokemonSet> pokemonSets = new List<PokemonSet>();
+                var sheets = (await _sheetService.GetAllSheets(_config.googledrive.sheets.pokemon)).Where(x => x.Properties.Title.ToLower() != "overview");
+
+                foreach (var sheet in sheets.Reverse())
+                {
+                    var newSet = new PokemonSet(sheet);
+
+                    var rows = await _sheetService.GetAllRowsAsync<PokemonCard>(_config.googledrive.sheets.pokemon, sheet.Properties.Title, PokemonCardUtil.ToPokemonCard);
+                    rows.RemoveRange(0, 3);
+
+                    newSet.Cards = rows.Where(row => row != null).Where(row => !String.IsNullOrEmpty(row.Name)).ToList();
+                    foreach (var card in newSet.Cards) card.Set = newSet;
+
+                    pokemonSets.Add(newSet);
+                    Console.WriteLine($"{newSet.Name}: {newSet.Cards.Count} cards loaded");
+                    await Task.Delay(3000);
+                }
 
                 var filterWords = (IEnumerable<string>)(_config.config.pokemonfilterwords ?? Array.Empty<string>());
                 var pokemon = (IEnumerable<string>)(_config.config.pokemon ?? Array.Empty<string>());
@@ -369,23 +384,11 @@ namespace eBay_API.Controllers
 
                 // Unify & filter using the typed overload for PokemonAuctionItem
                 List<PokemonAuctionItem> filteredEbayItems = AuctionItemUtil.UnifyAndFilter(newAuctionItems, new List<PokemonAuctionItem>(), filterWords, centralZone);
-                List<PokemonAuctionItem> selectedItems = new List<PokemonAuctionItem>();
 
-
-
-
-                List<PokemonSet> pokemonSets = new List<PokemonSet>();
-                var sheets = (await _sheetService.GetAllSheets(_config.googledrive.sheets.pokemon)).Where(x => x.Properties.Title.ToLower() != "overview");
-                
-                foreach (var sheet in sheets)
+                foreach (var item in filteredEbayItems)
                 {
-                    var newSet = new PokemonSet(sheet);
-
-                    //TODO: Get all rows for this sheet
-                    //var rows = await _sheetService.GetAllRowsAsync<PokemonCard>(_config.googledrive.sheets.pokemon, sheet.Properties.Title, PokemonCardUtil.ToPokemonCard(newSet));
-
+                    item.Have = pokemonSets.Any(set => set.Cards.Any(card => card.CardNumber.Equals(item.CardNumber, StringComparison.OrdinalIgnoreCase) && card.Have) && set.Name == item.Set);
                 }
-
 
                 // Write these items to google drive
                 await _sheetService.CreateSheetAsync(_config.googledrive.sheets.ebay, "0 - Pokemon", (new PokemonAuctionItem()).GetHeaderRow());

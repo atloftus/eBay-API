@@ -5,7 +5,7 @@ namespace eBay_API.Models.GoogleDrive
     public class PokemonCard
     {
         public PokemonSet Set { get; set; }
-        public string SetNumber { get; set; }
+        public string CardNumber { get; set; }
         public string Name { get; set; }
         public string Type { get; set; }
         public int QualityNormal { get; set; }

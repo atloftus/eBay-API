@@ -349,5 +349,16 @@ public class GoogleDriveService
     {
         return (await _sheetService.Spreadsheets.Get(spreadsheetId).ExecuteAsync().ConfigureAwait(false)).Sheets;
     }
+
+
+    public async Task<List<object>> GetRowAsync(string spreadsheetId, string sheetName, int index)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName)) throw new ArgumentException("Sheet name is required", nameof(sheetName));
+        var existingId = await GetSheetIdAsync(spreadsheetId, sheetName).ConfigureAwait(false);
+        var getRequest = _sheetService.Spreadsheets.Values.Get(spreadsheetId, $"{sheetName}!A1:Z");
+        var getResponse = await getRequest.ExecuteAsync().ConfigureAwait(false);
+        var rows = getResponse.Values?.ToList() ?? new List<IList<object>>();
+        return rows.Count > index ? rows[index].ToList() : new List<object>();
+    }
     #endregion
 }
